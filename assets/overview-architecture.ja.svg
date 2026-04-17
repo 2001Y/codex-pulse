@@ -46,28 +46,28 @@
   <text x="105" y="476" class="small">review.trigger_quality</text>
 
   <rect x="60" y="540" width="310" height="360" class="box" fill="rgba(30,41,59,0.4)" stroke="#94a3b8"/>
-  <text x="85" y="580" class="section">B. 情報ソース群</text>
+  <text x="85" y="580" class="section">B. 収集</text>
   <rect x="85" y="605" width="260" height="84" class="card" fill="#0f172a" stroke="#94a3b8"/>
-  <text x="105" y="635" class="label">運用コンテキスト</text>
+  <text x="105" y="635" class="label">運用コンテキスト source</text>
   <text x="105" y="658" class="small">Calendar ・ Gmail ・ Notes</text>
   <text x="105" y="680" class="small">Maps ・ Location history</text>
   <rect x="85" y="705" width="260" height="84" class="card" fill="#0f172a" stroke="#94a3b8"/>
-  <text x="105" y="735" class="label">会話履歴</text>
+  <text x="105" y="735" class="label">会話 source</text>
   <text x="105" y="758" class="small">Hermes ・ ChatGPT ・ Grok</text>
   <text x="105" y="780" class="small">local / export / share / manual</text>
   <rect x="85" y="805" width="260" height="70" class="card" fill="#0f172a" stroke="#94a3b8"/>
-  <text x="105" y="835" class="label">SNS / memory</text>
+  <text x="105" y="835" class="label">SNS / memory source</text>
   <text x="105" y="858" class="small">X timeline ・ bookmarks ・ likes</text>
 
   <rect x="460" y="170" width="290" height="180" class="box" fill="rgba(6,78,59,0.35)" stroke="#34d399"/>
-  <text x="485" y="210" class="section">C. 収集</text>
+  <text x="485" y="210" class="section">収集ポリシー</text>
   <text x="485" y="245" class="label">Acquisition plan</text>
   <text x="485" y="270" class="small">trigger profile に必要な範囲だけ取りに行く</text>
   <text x="485" y="300" class="tiny">local_store ・ official_api ・ official_export</text>
   <text x="485" y="322" class="tiny">share_link_import ・ manual_import ・ browser_automation_experimental</text>
 
   <rect x="460" y="395" width="290" height="255" class="box" fill="rgba(6,78,59,0.35)" stroke="#34d399"/>
-  <text x="485" y="435" class="section">D. 統合 / ranking / suppression</text>
+  <text x="485" y="435" class="section">C. 統合 / ranking / suppression</text>
   <text x="485" y="470" class="label">束ねて、順位付けして、ノイズを抑える</text>
   <text x="485" y="495" class="small">people ・ time ・ place ・ open loops</text>
   <text x="485" y="520" class="small">resurfacing ・ quota ・ dedupe</text>
@@ -77,7 +77,7 @@
   <text x="485" y="630" class="tiny">X 内では bookmark &gt; like &gt; home timeline diff</text>
 
   <rect x="840" y="170" width="320" height="240" class="box" fill="rgba(76,29,149,0.35)" stroke="#a78bfa"/>
-  <text x="865" y="210" class="section">E. 出力生成</text>
+  <text x="865" y="210" class="section">D. 出力生成</text>
   <rect x="865" y="235" width="270" height="50" class="card" fill="#0f172a" stroke="#a78bfa"/>
   <text x="885" y="266" class="label">digest</text>
   <rect x="865" y="295" width="130" height="50" class="card" fill="#0f172a" stroke="#a78bfa"/>
@@ -90,14 +90,14 @@
   <text x="1030" y="386" class="small">action_prep</text>
 
   <rect x="840" y="455" width="320" height="195" class="box" fill="rgba(120,53,15,0.30)" stroke="#fbbf24"/>
-  <text x="865" y="495" class="section">F. 配信 / 実行</text>
+  <text x="865" y="495" class="section">E. 配信 / 実行</text>
   <text x="865" y="530" class="label">Adapter</text>
   <text x="865" y="555" class="small">Slack ・ Telegram ・ local files ・ future app UI</text>
   <text x="865" y="590" class="label">Action level</text>
   <text x="865" y="615" class="small">L0 observe ・ L1 suggest ・ L2 prepare ・ L3 approve+execute</text>
 
   <rect x="1250" y="230" width="290" height="330" class="box" fill="rgba(136,19,55,0.35)" stroke="#fb7185"/>
-  <text x="1275" y="270" class="section">G. 状態 / memory / audit</text>
+  <text x="1275" y="270" class="section">F. 状態 / memory / audit</text>
   <text x="1275" y="305" class="label">SQLite + raw artifact refs</text>
   <text x="1275" y="335" class="small">connector cursor</text>
   <text x="1275" y="360" class="small">delivery history</text>
