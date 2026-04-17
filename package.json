@@ -1,7 +1,7 @@
 {
   "name": "personal-briefing-engine",
-  "private": true,
-  "version": "0.1.0",
-  "description": "Agent-agnostic personal morning/evening briefing engine",
+  "private": false,
+  "version": "0.2.0",
+  "description": "Agent-agnostic personal operating briefing engine with unified scheduled and event-driven trigger architecture",
   "license": "MIT"
 }

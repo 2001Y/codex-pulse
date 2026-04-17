@@ -1,14 +1,34 @@
 # Docs Index
 
-- [00-overview](./00-overview.md)
-- [01-competitive-research](./01-competitive-research.md)
-- [02-product-requirements](./02-product-requirements.md)
-- [03-architecture](./03-architecture.md)
-- [04-connectors-and-ingestion](./04-connectors-and-ingestion.md)
-- [05-x-timeline-diff](./05-x-timeline-diff.md)
-- [06-implementation-plan](./06-implementation-plan.md)
-- [07-references](./07-references.md)
-- [2026-04-16-proactive-life-agent-architecture](./2026-04-16-proactive-life-agent-architecture.md)
+## Canonical docs
 
-These docs define the v1 planning baseline for an agent-agnostic personal briefing engine.
-The added proactive-life-agent document is a preserved upstream planning artifact covering broader trigger dimensions such as location, dwell, schedule proximity, mail events, shopping/replenishment, and self-improving trigger logic.
+1. [01-product-thesis](./01-product-thesis.md)
+2. [02-system-architecture](./02-system-architecture.md)
+3. [03-trigger-model](./03-trigger-model.md)
+4. [04-collection-and-connectors](./04-collection-and-connectors.md)
+5. [05-synthesis-ranking-and-suppression](./05-synthesis-ranking-and-suppression.md)
+6. [06-output-delivery-and-actions](./06-output-delivery-and-actions.md)
+7. [07-state-memory-and-audit](./07-state-memory-and-audit.md)
+8. [08-roadmap](./08-roadmap.md)
+9. [09-migration-from-legacy](./09-migration-from-legacy.md)
+10. [10-appendix-legacy-research](./10-appendix-legacy-research.md)
+
+## Source notes
+
+- [source-notes/x](./source-notes/x.md)
+- [source-notes/conversation-history](./source-notes/conversation-history.md)
+
+## Reading order
+
+If you want the shortest path:
+1. `01-product-thesis`
+2. `02-system-architecture`
+3. `03-trigger-model`
+4. `05-synthesis-ranking-and-suppression`
+5. `06-output-delivery-and-actions`
+6. `07-state-memory-and-audit`
+
+## Why this doc set exists
+
+The repository was refreshed from a digest-centric planning set into a unified trigger-driven architecture.
+Morning and evening editions are now modeled as scheduled trigger profiles inside the same system that also handles proactive event triggers such as location arrival, dwell, calendar proximity, inbound mail, shopping/replenishment, and trigger self-review.
