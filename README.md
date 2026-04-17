@@ -9,6 +9,10 @@ This repository defines a unified architecture for two things that should not be
 
 The project is intentionally **not Hermes-only**. Hermes Agent is one strong runtime example, but the core design should also work as a standalone daemon/CLI or under other agent runtimes.
 
+## Visual summary
+
+![personal-briefing-engine overview](./assets/overview-architecture.svg)
+
 ## Product thesis
 
 This is **not** a generic AI news summary app.
