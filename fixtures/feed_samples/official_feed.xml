@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Example Official Blog</title>
+    <link>https://example.com/</link>
+    <description>Official updates</description>
+    <item>
+      <guid>example-post-1</guid>
+      <title>Launch update</title>
+      <link>https://example.com/posts/launch-update</link>
+      <description>Important release details.</description>
+      <pubDate>Mon, 20 Apr 2026 08:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
