@@ -43,3 +43,26 @@ def test_broad_day_start_invokes_expected_connectors_only() -> None:
     assert hermes_history.calls == 1
     assert notes.calls == 1
     assert unrelated.calls == 0
+
+
+def test_broad_day_start_skips_missing_optional_connectors() -> None:
+    profile = get_trigger_profile("digest.morning.default")
+    trigger = TriggerEvent(
+        id="trigger-1",
+        type=profile.event_type,
+        profile_id=profile.id,
+        occurred_at="2026-04-20T08:00:00Z",
+        scope=TriggerScope(),
+    )
+    feed = StubConnector("feed_registry")
+
+    collected = collect_for_trigger(
+        trigger,
+        profile,
+        {
+            feed.id: feed,
+        },
+    )
+
+    assert collected == ["feed_registry"]
+    assert feed.calls == 1

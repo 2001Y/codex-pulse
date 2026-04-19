@@ -16,8 +16,6 @@ from hermes_pulse.trigger_registry import get_trigger_profile
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SOURCE_REGISTRY = REPO_ROOT / "fixtures/source_registry/sample_sources.yaml"
-DEFAULT_HERMES_HISTORY = REPO_ROOT / "fixtures/hermes_history/sample_session.json"
-DEFAULT_NOTES = REPO_ROOT / "fixtures/notes/sample_notes.md"
 
 
 class BoundConnector:
@@ -33,8 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("command", nargs="?", choices=("morning-digest",))
     parser.add_argument("--source-registry", type=Path)
     parser.add_argument("--feed-fixture", type=Path)
-    parser.add_argument("--hermes-history", type=Path, default=DEFAULT_HERMES_HISTORY)
-    parser.add_argument("--notes", type=Path, default=DEFAULT_NOTES)
+    parser.add_argument("--hermes-history", type=Path)
+    parser.add_argument("--notes", type=Path)
     parser.add_argument("--output", type=Path)
     return parser
 
@@ -70,9 +68,13 @@ def _build_morning_digest(args: argparse.Namespace) -> str:
         "feed_registry": BoundConnector(
             lambda: FeedRegistryConnector(fetcher=feed_fetcher).collect(source_registry)
         ),
-        "hermes_history": BoundConnector(lambda: HermesHistoryConnector().collect(args.hermes_history)),
-        "notes": BoundConnector(lambda: NotesConnector().collect(args.notes)),
     }
+    if args.hermes_history is not None:
+        connectors["hermes_history"] = BoundConnector(
+            lambda: HermesHistoryConnector().collect(args.hermes_history)
+        )
+    if args.notes is not None:
+        connectors["notes"] = BoundConnector(lambda: NotesConnector().collect(args.notes))
     items = collect_for_trigger(trigger, profile, connectors)
     candidates = synthesize_candidates(items)
     return render_morning_digest(candidates, items)

@@ -16,6 +16,8 @@ def collect_for_trigger(
 ) -> list[Any]:
     collected: list[Any] = []
     for connector_id in COLLECTION_PRESETS.get(profile.collection_preset, []):
-        connector = connectors[connector_id]
+        connector = connectors.get(connector_id)
+        if connector is None:
+            continue
         collected.extend(connector.collect())
     return collected
