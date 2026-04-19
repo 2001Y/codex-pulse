@@ -1,4 +1,5 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from urllib.request import urlopen
 from xml.etree import ElementTree
 
 from hermes_pulse.models import CitationLink, CollectedItem, ItemTimestamps, Provenance, SourceRegistryEntry
@@ -8,8 +9,8 @@ class FeedRegistryConnector:
     id = "feed_registry"
     source_family = "feed_registry"
 
-    def __init__(self, fetcher: Callable[[str], str]) -> None:
-        self._fetcher = fetcher
+    def __init__(self, fetcher: Callable[[str], str] | None = None) -> None:
+        self._fetcher = fetcher or _fetch_url
 
     def collect(self, entries: Sequence[SourceRegistryEntry]) -> list[CollectedItem]:
         items: list[CollectedItem] = []
@@ -23,7 +24,7 @@ class FeedRegistryConnector:
     def _parse_items(self, entry: SourceRegistryEntry, payload: str) -> list[CollectedItem]:
         root = ElementTree.fromstring(payload)
         parsed_items: list[CollectedItem] = []
-        for raw_item in root.findall("./channel/item"):
+        for raw_item in _iter_feed_items(root):
             title = _text(raw_item, "title")
             url = _text(raw_item, "link")
             guid = _text(raw_item, "guid") or url or title or entry.id
@@ -50,8 +51,41 @@ class FeedRegistryConnector:
         return parsed_items
 
 
+def _fetch_url(url: str) -> str:
+    with urlopen(url) as response:
+        return response.read().decode("utf-8")
+
+
+def _iter_feed_items(root: ElementTree.Element) -> Iterator[ElementTree.Element]:
+    channel = _child(root, "channel")
+    if channel is not None:
+        yield from _children(channel, "item")
+    yield from _children(root, "item")
+
+
+def _child(element: ElementTree.Element, tag: str) -> ElementTree.Element | None:
+    for child in element:
+        if _local_name(child.tag) == tag:
+            return child
+    return None
+
+
+def _children(element: ElementTree.Element, tag: str) -> Iterator[ElementTree.Element]:
+    for child in element:
+        if _local_name(child.tag) == tag:
+            yield child
+
+
 def _text(element: ElementTree.Element, tag: str) -> str | None:
-    node = element.find(tag)
+    node = _child(element, tag)
     if node is None or node.text is None:
         return None
     return node.text.strip()
+
+
+def _local_name(tag: str) -> str:
+    if "}" in tag:
+        return tag.rsplit("}", 1)[-1]
+    if ":" in tag:
+        return tag.rsplit(":", 1)[-1]
+    return tag

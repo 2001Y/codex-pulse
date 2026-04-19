@@ -16,7 +16,6 @@ from hermes_pulse.trigger_registry import get_trigger_profile
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SOURCE_REGISTRY = REPO_ROOT / "fixtures/source_registry/sample_sources.yaml"
-DEFAULT_FEED_FIXTURE = REPO_ROOT / "fixtures/feed_samples/official_feed.xml"
 DEFAULT_HERMES_HISTORY = REPO_ROOT / "fixtures/hermes_history/sample_session.json"
 DEFAULT_NOTES = REPO_ROOT / "fixtures/notes/sample_notes.md"
 
@@ -33,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="hermes-pulse")
     parser.add_argument("command", nargs="?", choices=("morning-digest",))
     parser.add_argument("--source-registry", type=Path)
-    parser.add_argument("--feed-fixture", type=Path, default=DEFAULT_FEED_FIXTURE)
+    parser.add_argument("--feed-fixture", type=Path)
     parser.add_argument("--hermes-history", type=Path, default=DEFAULT_HERMES_HISTORY)
     parser.add_argument("--notes", type=Path, default=DEFAULT_NOTES)
     parser.add_argument("--output", type=Path)
@@ -44,7 +43,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(list(argv) if argv is not None else None)
 
     if args.command == "morning-digest":
-        markdown = _build_fixture_backed_morning_digest(args)
+        markdown = _build_morning_digest(args)
     elif args.output is not None:
         markdown = render_morning_digest([], [])
     else:
@@ -56,10 +55,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _build_fixture_backed_morning_digest(args: argparse.Namespace) -> str:
+def _build_morning_digest(args: argparse.Namespace) -> str:
     profile = get_trigger_profile("digest.morning.default")
     source_registry = load_source_registry(args.source_registry or DEFAULT_SOURCE_REGISTRY)
-    feed_fixture = args.feed_fixture.read_text()
+    feed_fetcher = _build_feed_fetcher(args.feed_fixture)
     trigger = TriggerEvent(
         id="scheduled:digest.morning.default",
         type=profile.event_type,
@@ -69,7 +68,7 @@ def _build_fixture_backed_morning_digest(args: argparse.Namespace) -> str:
     )
     connectors = {
         "feed_registry": BoundConnector(
-            lambda: FeedRegistryConnector(fetcher=lambda url: feed_fixture).collect(source_registry)
+            lambda: FeedRegistryConnector(fetcher=feed_fetcher).collect(source_registry)
         ),
         "hermes_history": BoundConnector(lambda: HermesHistoryConnector().collect(args.hermes_history)),
         "notes": BoundConnector(lambda: NotesConnector().collect(args.notes)),
@@ -77,6 +76,13 @@ def _build_fixture_backed_morning_digest(args: argparse.Namespace) -> str:
     items = collect_for_trigger(trigger, profile, connectors)
     candidates = synthesize_candidates(items)
     return render_morning_digest(candidates, items)
+
+
+def _build_feed_fetcher(feed_fixture: Path | None) -> Callable[[str], str] | None:
+    if feed_fixture is None:
+        return None
+    payload = feed_fixture.read_text()
+    return lambda url: payload
 
 
 if __name__ == "__main__":
