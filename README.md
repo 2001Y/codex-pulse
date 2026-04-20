@@ -159,6 +159,8 @@ Implemented today:
 - `mail-operational` event-trigger CLI
 - `shopping-replenishment` event-trigger CLI
 - `feed-update` event-trigger CLI
+- `location-arrival` event-trigger CLI
+- `review-trigger-quality` audit CLI
 - optional local connectors for Hermes history and notes
 - archive writer that persists raw collected items and Codex-facing inputs by date
 - Codex CLI summarization path
@@ -168,10 +170,10 @@ Implemented today:
 
 Current scope and gaps:
 - the runtime is still intentionally small and fixture-friendly
-- canonical CLI flows today are `morning-digest`, `evening-digest`, `leave-now-warning`, `mail-operational`, `shopping-replenishment`, and `feed-update`
-- `calendar.leave_now`, `mail.operational`, `shopping.replenishment`, and `feed.update` are implemented minimally; other trigger families still remain future work
+- canonical CLI flows today are `morning-digest`, `evening-digest`, `leave-now-warning`, `mail-operational`, `shopping-replenishment`, `feed-update`, `location-arrival`, and `review-trigger-quality`
+- `calendar.leave_now`, `mail.operational`, `shopping.replenishment`, `feed.update`, `location.arrival`, and `review.trigger_quality` are implemented minimally; deeper trigger families still remain future work
 - docs still describe broader target architecture beyond the currently implemented runtime
 
 Verification snapshot:
 - `pytest -q` → passing
-- current local test suite covers CLI, models, registries, collection, Calendar/Gmail connectors, event-trigger rendering, delivery, launchd integration, and the `xurl` connector
+- current local test suite covers CLI, models, registries, collection, Calendar/Gmail/location/audit connectors, event-trigger rendering, delivery, launchd integration, and the `xurl` connector

@@ -59,6 +59,8 @@ Current implementation note:
 - `calendar.leave_now.default` currently renders a minimal `warning`
 - `mail.operational.default` currently renders a minimal `warning`
 - `shopping.replenishment.default` currently renders a minimal `action_prep`
+- `location.arrival.default` currently renders a minimal `mini_digest`
+- `review.trigger_quality.default` currently renders a minimal `source_audit`
 
 ## TriggerProfile examples
 
