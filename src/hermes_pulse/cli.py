@@ -15,6 +15,7 @@ from hermes_pulse.connectors.known_source_search import KnownSourceSearchConnect
 from hermes_pulse.connectors.location_context import LocationContextConnector, load_location_context_fixture
 from hermes_pulse.connectors.notes import NotesConnector
 from hermes_pulse.connectors.x_url import XUrlConnector
+from hermes_pulse.db import record_delivery, record_trigger_run, update_trigger_run_status
 from hermes_pulse.delivery.local_markdown import LocalMarkdownDelivery
 from hermes_pulse.models import CollectedItem, TriggerEvent, TriggerScope
 from hermes_pulse.rendering import (
@@ -74,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--hermes-history", type=Path)
     parser.add_argument("--notes", type=Path)
     parser.add_argument("--archive-root", type=Path)
+    parser.add_argument("--state-db", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--now")
     parser.add_argument("--x-signals")
@@ -82,46 +84,113 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(list(argv) if argv is not None else None)
-    markdown: str | None = None
-
-    if args.command in {"morning-digest", "evening-digest"}:
-        items = _build_digest(args.command, args)
-        archive_root = args.archive_root or Path.home() / "Pulse"
-        archive_directory = write_morning_digest_archive(
-            items=items,
-            archive_root=archive_root,
-            archive_date=date.today().isoformat(),
-        )
-        markdown = CodexCliSummarizer().summarize_archive(archive_directory).content
-    elif args.command == "leave-now-warning":
-        markdown = _build_leave_now_warning(args)
-    elif args.command == "mail-operational":
-        markdown = _build_mail_operational(args)
-    elif args.command == "shopping-replenishment":
-        markdown = _build_shopping_replenishment(args)
-    elif args.command == "feed-update":
-        markdown = _build_feed_update(args)
-    elif args.command == "location-arrival":
-        markdown = _build_location_arrival(args)
-    elif args.command == "review-trigger-quality":
-        markdown = _build_review_trigger_quality(args)
-    elif args.command == "gap-window-mini-digest":
-        markdown = _build_gap_window(args)
-    elif args.command == "feed-update-deep-brief":
-        markdown = _build_feed_update_deep_brief(args)
-    elif args.command == "feed-update-source-audit":
-        markdown = _build_feed_update_source_audit(args)
-    else:
+    if args.command is None:
         return 0
 
-    if args.output is not None and markdown is not None:
-        LocalMarkdownDelivery().deliver(markdown, args.output)
+    run_id: str | None = None
+    profile = None
+    if args.state_db is not None:
+        profile = _profile_for_command(args.command)
+        occurred_at = _occurred_at_for_command(args.command, args)
+        run_id = record_trigger_run(
+            args.state_db,
+            event_type=profile.event_type,
+            profile_id=profile.id,
+            occurred_at=occurred_at,
+            output_mode=profile.output_mode,
+            status="started",
+        )
 
+    delivery_succeeded = False
+    try:
+        markdown: str | None = None
+
+        if args.command in {"morning-digest", "evening-digest"}:
+            items = _build_digest(args.command, args)
+            archive_root = args.archive_root or Path.home() / "Pulse"
+            archive_directory = write_morning_digest_archive(
+                items=items,
+                archive_root=archive_root,
+                archive_date=date.today().isoformat(),
+            )
+            markdown = CodexCliSummarizer().summarize_archive(archive_directory).content
+        elif args.command == "leave-now-warning":
+            markdown = _build_leave_now_warning(args)
+        elif args.command == "mail-operational":
+            markdown = _build_mail_operational(args)
+        elif args.command == "shopping-replenishment":
+            markdown = _build_shopping_replenishment(args)
+        elif args.command == "feed-update":
+            markdown = _build_feed_update(args)
+        elif args.command == "location-arrival":
+            markdown = _build_location_arrival(args)
+        elif args.command == "review-trigger-quality":
+            markdown = _build_review_trigger_quality(args)
+        elif args.command == "gap-window-mini-digest":
+            markdown = _build_gap_window(args)
+        elif args.command == "feed-update-deep-brief":
+            markdown = _build_feed_update_deep_brief(args)
+        elif args.command == "feed-update-source-audit":
+            markdown = _build_feed_update_source_audit(args)
+        else:
+            return 0
+
+        if args.output is not None and markdown is not None:
+            delivered_path = LocalMarkdownDelivery().deliver(markdown, args.output)
+            delivery_succeeded = True
+            if args.state_db is not None and run_id is not None:
+                record_delivery(args.state_db, run_id=run_id, destination=str(delivered_path), status="success")
+    except Exception:
+        if args.state_db is not None and run_id is not None:
+            try:
+                if delivery_succeeded:
+                    update_trigger_run_status(args.state_db, run_id=run_id, status="delivery_state_error")
+                else:
+                    update_trigger_run_status(args.state_db, run_id=run_id, status="failed")
+            except Exception:
+                pass
+        raise
+
+    if args.state_db is not None and run_id is not None:
+        try:
+            update_trigger_run_status(args.state_db, run_id=run_id, status="completed")
+        except Exception:
+            if delivery_succeeded:
+                try:
+                    update_trigger_run_status(args.state_db, run_id=run_id, status="delivery_state_error")
+                except Exception:
+                    pass
+            raise
     return 0
 
 
 def _build_morning_digest(args: argparse.Namespace) -> list[CollectedItem]:
     return _build_digest("morning-digest", args)
+
+
+def _profile_for_command(command: str | None):
+    if command is None:
+        raise ValueError("command is required for state recording")
+    profile_id = {
+        "morning-digest": "digest.morning.default",
+        "evening-digest": "digest.evening.default",
+        "leave-now-warning": "calendar.leave_now.default",
+        "mail-operational": "mail.operational.default",
+        "shopping-replenishment": "shopping.replenishment.default",
+        "feed-update": "feed.update.default",
+        "location-arrival": "location.arrival.default",
+        "review-trigger-quality": "review.trigger_quality.default",
+        "gap-window-mini-digest": "calendar.gap_window.default",
+        "feed-update-deep-brief": "feed.update.expert_depth",
+        "feed-update-source-audit": "feed.update.source_audit",
+    }[command]
+    return get_trigger_profile(profile_id)
+
+
+def _occurred_at_for_command(command: str | None, args: argparse.Namespace) -> str:
+    if args.now:
+        return args.now
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _build_leave_now_warning(args: argparse.Namespace) -> str | None:
@@ -182,7 +251,7 @@ def _build_event_trigger_items(profile_id: str, args: argparse.Namespace) -> lis
     notes_path = getattr(args, "notes", None)
     calendar_runner = _build_json_runner(calendar_fixture)
     gmail_runner = _build_json_runner(gmail_fixture)
-    occurred_at = (args.now or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"))
+    occurred_at = (getattr(args, "now", None) or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"))
     trigger = TriggerEvent(
         id=f"event:{profile.id}",
         type=profile.event_type,
@@ -228,7 +297,7 @@ def _build_digest(command: str, args: argparse.Namespace) -> list[CollectedItem]
     gmail_fixture = getattr(args, "gmail_fixture", None)
     calendar_runner = _build_json_runner(calendar_fixture)
     gmail_runner = _build_json_runner(gmail_fixture)
-    occurred_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    occurred_at = (getattr(args, "now", None) or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"))
     trigger = TriggerEvent(
         id="scheduled:digest.morning.default",
         type=profile.event_type,

@@ -1,5 +1,7 @@
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 
 SCHEMA_STATEMENTS = (
@@ -46,7 +48,68 @@ SCHEMA_STATEMENTS = (
 
 
 def initialize_database(path: str | Path) -> None:
-    with sqlite3.connect(Path(path)) as connection:
+    database_path = Path(path)
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(database_path) as connection:
         for statement in SCHEMA_STATEMENTS:
             connection.execute(statement)
+        connection.commit()
+
+
+def record_trigger_run(
+    path: str | Path,
+    *,
+    event_type: str,
+    profile_id: str,
+    occurred_at: str,
+    output_mode: str | None,
+    status: str,
+) -> str:
+    database_path = Path(path)
+    initialize_database(database_path)
+    run_id = uuid4().hex
+    created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO trigger_runs (run_id, event_type, profile_id, occurred_at, output_mode, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (run_id, event_type, profile_id, occurred_at, output_mode, status, created_at),
+        )
+        connection.commit()
+    return run_id
+
+
+def record_delivery(
+    path: str | Path,
+    *,
+    run_id: str,
+    destination: str,
+    status: str,
+) -> str:
+    database_path = Path(path)
+    initialize_database(database_path)
+    delivery_id = uuid4().hex
+    delivered_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO deliveries (delivery_id, run_id, destination, delivered_at, status)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (delivery_id, run_id, destination, delivered_at, status),
+        )
+        connection.commit()
+    return delivery_id
+
+
+def update_trigger_run_status(path: str | Path, *, run_id: str, status: str) -> None:
+    database_path = Path(path)
+    initialize_database(database_path)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "UPDATE trigger_runs SET status = ? WHERE run_id = ?",
+            (status, run_id),
+        )
         connection.commit()

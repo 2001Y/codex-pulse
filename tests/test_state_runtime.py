@@ -1,0 +1,309 @@
+import json
+import sqlite3
+from pathlib import Path
+
+import hermes_pulse.cli
+from hermes_pulse.summarization.base import SummaryArtifact
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE_REGISTRY_PATH = ROOT / "fixtures/source_registry/sample_sources.yaml"
+HERMES_HISTORY_PATH = ROOT / "fixtures/hermes_history/sample_session.json"
+NOTES_PATH = ROOT / "fixtures/notes/sample_notes.md"
+CALENDAR_FIXTURE = ROOT / "fixtures/google_workspace/calendar_leave_now_events.json"
+
+
+def _install_stub_codex_summarizer(monkeypatch, template: str | None = None) -> list[dict[str, object]]:
+    calls: list[dict[str, object]] = []
+
+    class StubCodexCliSummarizer:
+        def summarize_archive(self, archive_directory: str | Path) -> SummaryArtifact:
+            archive_directory = Path(archive_directory)
+            raw_items = json.loads((archive_directory / "raw" / "collected-items.json").read_text())
+            content = template or "# Codex Digest\n\n" + "".join(
+                f"- {item['title']}\n" for item in raw_items
+            )
+            output_path = archive_directory / "summary" / "codex-digest.md"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(content)
+            calls.append(
+                {
+                    "archive_directory": archive_directory,
+                    "raw_items": raw_items,
+                    "content": content,
+                }
+            )
+            return SummaryArtifact(path=output_path, content=content)
+
+    monkeypatch.setattr(hermes_pulse.cli, "CodexCliSummarizer", StubCodexCliSummarizer)
+    return calls
+
+
+def test_morning_digest_records_trigger_run_and_delivery_in_state_db(monkeypatch, tmp_path: Path) -> None:
+    _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
+    database_path = tmp_path / "state" / "codex-pulse.db"
+    output_path = tmp_path / "deliveries" / "morning-digest.md"
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--hermes-history",
+                str(HERMES_HISTORY_PATH),
+                "--notes",
+                str(NOTES_PATH),
+                "--state-db",
+                str(database_path),
+                "--output",
+                str(output_path),
+            ]
+        )
+        == 0
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        trigger_runs = connection.execute(
+            "SELECT event_type, profile_id, output_mode, status FROM trigger_runs"
+        ).fetchall()
+        deliveries = connection.execute(
+            "SELECT destination, status FROM deliveries"
+        ).fetchall()
+
+    assert trigger_runs == [("digest.morning", "digest.morning.default", "digest", "completed")]
+    assert deliveries == [(str(output_path), "success")]
+
+
+def test_event_trigger_records_run_without_delivery_when_no_output(monkeypatch, tmp_path: Path) -> None:
+    database_path = tmp_path / "state" / "codex-pulse.db"
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "leave-now-warning",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--calendar-fixture",
+                str(CALENDAR_FIXTURE),
+                "--now",
+                "2026-04-20T08:45:00Z",
+                "--state-db",
+                str(database_path),
+            ]
+        )
+        == 0
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        trigger_runs = connection.execute(
+            "SELECT event_type, profile_id, output_mode, status FROM trigger_runs"
+        ).fetchall()
+        deliveries = connection.execute("SELECT destination, status FROM deliveries").fetchall()
+
+    assert trigger_runs == [("calendar.leave_now", "calendar.leave_now.default", "warning", "completed")]
+    assert deliveries == []
+
+
+def test_delivery_failure_marks_trigger_run_failed(monkeypatch, tmp_path: Path) -> None:
+    _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
+    database_path = tmp_path / "state" / "codex-pulse.db"
+    output_path = tmp_path / "deliveries" / "morning-digest.md"
+
+    class ExplodingDelivery:
+        def deliver(self, content: str, destination: str | Path) -> Path:
+            raise OSError("disk full")
+
+    monkeypatch.setattr(hermes_pulse.cli, "LocalMarkdownDelivery", lambda: ExplodingDelivery())
+
+    try:
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--hermes-history",
+                str(HERMES_HISTORY_PATH),
+                "--notes",
+                str(NOTES_PATH),
+                "--state-db",
+                str(database_path),
+                "--output",
+                str(output_path),
+            ]
+        )
+    except OSError as exc:
+        assert str(exc) == "disk full"
+    else:
+        raise AssertionError("delivery failure should propagate")
+
+    with sqlite3.connect(database_path) as connection:
+        trigger_runs = connection.execute(
+            "SELECT event_type, profile_id, output_mode, status FROM trigger_runs"
+        ).fetchall()
+        deliveries = connection.execute("SELECT destination, status FROM deliveries").fetchall()
+
+    assert trigger_runs == [("digest.morning", "digest.morning.default", "digest", "failed")]
+    assert deliveries == []
+
+
+def test_summarization_failure_still_records_failed_trigger_run(monkeypatch, tmp_path: Path) -> None:
+    database_path = tmp_path / "state" / "codex-pulse.db"
+
+    class ExplodingSummarizer:
+        def summarize_archive(self, archive_directory: str | Path):
+            raise RuntimeError("codex unavailable")
+
+    monkeypatch.setattr(hermes_pulse.cli, "CodexCliSummarizer", lambda: ExplodingSummarizer())
+
+    try:
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--hermes-history",
+                str(HERMES_HISTORY_PATH),
+                "--notes",
+                str(NOTES_PATH),
+                "--state-db",
+                str(database_path),
+            ]
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "codex unavailable"
+    else:
+        raise AssertionError("summarization failure should propagate")
+
+    with sqlite3.connect(database_path) as connection:
+        trigger_runs = connection.execute(
+            "SELECT event_type, profile_id, output_mode, status FROM trigger_runs"
+        ).fetchall()
+
+    assert trigger_runs == [("digest.morning", "digest.morning.default", "digest", "failed")]
+
+
+def test_delivery_state_logging_failure_uses_delivery_state_error_status(monkeypatch, tmp_path: Path) -> None:
+    _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
+    database_path = tmp_path / "state" / "codex-pulse.db"
+    output_path = tmp_path / "deliveries" / "morning-digest.md"
+
+    def exploding_record_delivery(*args, **kwargs):
+        raise RuntimeError("db write failed")
+
+    monkeypatch.setattr(hermes_pulse.cli, "record_delivery", exploding_record_delivery)
+
+    try:
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--hermes-history",
+                str(HERMES_HISTORY_PATH),
+                "--notes",
+                str(NOTES_PATH),
+                "--state-db",
+                str(database_path),
+                "--output",
+                str(output_path),
+            ]
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "db write failed"
+    else:
+        raise AssertionError("delivery state logging failure should propagate")
+
+    assert output_path.exists()
+    with sqlite3.connect(database_path) as connection:
+        trigger_runs = connection.execute(
+            "SELECT event_type, profile_id, output_mode, status FROM trigger_runs"
+        ).fetchall()
+        deliveries = connection.execute("SELECT destination, status FROM deliveries").fetchall()
+
+    assert trigger_runs == [("digest.morning", "digest.morning.default", "digest", "delivery_state_error")]
+    assert deliveries == []
+
+
+def test_morning_digest_state_db_uses_explicit_now_timestamp(monkeypatch, tmp_path: Path) -> None:
+    _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
+    database_path = tmp_path / "state" / "codex-pulse.db"
+    occurred_at = "2020-01-01T00:00:00Z"
+    collected_trigger_times: list[str] = []
+    original_collect_for_trigger = hermes_pulse.cli.collect_for_trigger
+
+    def capture_collect_for_trigger(trigger, profile, connectors):
+        collected_trigger_times.append(trigger.occurred_at)
+        return original_collect_for_trigger(trigger, profile, connectors)
+
+    monkeypatch.setattr(hermes_pulse.cli, "collect_for_trigger", capture_collect_for_trigger)
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--hermes-history",
+                str(HERMES_HISTORY_PATH),
+                "--notes",
+                str(NOTES_PATH),
+                "--state-db",
+                str(database_path),
+                "--now",
+                occurred_at,
+            ]
+        )
+        == 0
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        stored_occurred_at = connection.execute(
+            "SELECT occurred_at FROM trigger_runs"
+        ).fetchone()
+
+    assert stored_occurred_at == (occurred_at,)
+    assert collected_trigger_times == [occurred_at]
+
+
+def test_completed_status_write_failure_downgrades_to_delivery_state_error(monkeypatch, tmp_path: Path) -> None:
+    _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
+    database_path = tmp_path / "state" / "codex-pulse.db"
+    output_path = tmp_path / "deliveries" / "morning-digest.md"
+    original_update = hermes_pulse.cli.update_trigger_run_status
+
+    def flaky_update(path, *, run_id: str, status: str) -> None:
+        if status == "completed":
+            raise RuntimeError("final status write failed")
+        original_update(path, run_id=run_id, status=status)
+
+    monkeypatch.setattr(hermes_pulse.cli, "update_trigger_run_status", flaky_update)
+
+    try:
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--hermes-history",
+                str(HERMES_HISTORY_PATH),
+                "--notes",
+                str(NOTES_PATH),
+                "--state-db",
+                str(database_path),
+                "--output",
+                str(output_path),
+            ]
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "final status write failed"
+    else:
+        raise AssertionError("completed status write failure should propagate")
+
+    assert output_path.exists()
+    with sqlite3.connect(database_path) as connection:
+        trigger_runs = connection.execute(
+            "SELECT status FROM trigger_runs"
+        ).fetchall()
+
+    assert trigger_runs == [("delivery_state_error",)]
