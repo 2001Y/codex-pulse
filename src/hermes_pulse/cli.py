@@ -17,6 +17,7 @@ from hermes_pulse.connectors.notes import NotesConnector
 from hermes_pulse.connectors.x_url import XUrlConnector
 from hermes_pulse.db import (
     record_delivery,
+    record_feedback,
     record_suppression,
     record_trigger_run,
     update_trigger_run_status,
@@ -112,6 +113,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     pending_connector_cursor_update: tuple[list[CollectedItem], list[str], str] | None = None
     pending_source_registry_state_update: tuple[list[SourceRegistryEntry], list[CollectedItem], str] | None = None
     pending_suppression_update: tuple[list[CollectedItem], str, str, str] | None = None
+    pending_feedback_update: tuple[list[CollectedItem], str, str] | None = None
     try:
         markdown: str | None = None
 
@@ -149,7 +151,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "location-arrival":
             markdown = _build_location_arrival(args)
         elif args.command == "review-trigger-quality":
-            markdown = _build_review_trigger_quality(args)
+            items = _build_event_trigger_items("review.trigger_quality.default", args)
+            markdown = render_trigger_quality_review(items)
+            if args.state_db is not None and run_id is not None:
+                pending_feedback_update = (items, occurred_at, run_id)
         elif args.command == "gap-window-mini-digest":
             markdown = _build_gap_window(args)
         elif args.command == "feed-update-deep-brief":
@@ -181,6 +186,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 source_registry=source_registry,
                 items=items,
                 occurred_at=occurred_at,
+            )
+
+        if args.state_db is not None and pending_feedback_update is not None:
+            items, occurred_at, feedback_run_id = pending_feedback_update
+            _record_feedback_from_audit_items(
+                args.state_db,
+                items=items,
+                occurred_at=occurred_at,
+                run_id=feedback_run_id,
             )
 
         if args.state_db is not None and pending_connector_cursor_update is not None:
@@ -329,6 +343,46 @@ def _record_suppression_history(path: Path, *, items: list[CollectedItem], trigg
             dismissal_status="active",
             superseded_by_higher_authority=False,
         )
+
+
+def _record_feedback_from_audit_items(path: Path, *, items: list[CollectedItem], occurred_at: str, run_id: str) -> None:
+    for item in items:
+        if item.source != "audit_context":
+            continue
+        metadata = item.metadata
+        for signal in ("notification_rate", "ignored_rate", "delivery_failures"):
+            value = metadata.get(signal)
+            if value is None:
+                continue
+            record_feedback(
+                path,
+                run_id=run_id,
+                category="trigger_quality",
+                subject="review.trigger_quality",
+                signal=signal,
+                value=str(value),
+                recorded_at=occurred_at,
+            )
+        for subject in metadata.get("late_triggers", []):
+            record_feedback(
+                path,
+                run_id=run_id,
+                category="trigger_quality",
+                subject=str(subject),
+                signal="late_trigger",
+                value="1",
+                recorded_at=occurred_at,
+            )
+        for subject in metadata.get("weak_sources", []):
+            record_feedback(
+                path,
+                run_id=run_id,
+                category="source_quality",
+                subject=str(subject),
+                signal="weak_source",
+                value="1",
+                recorded_at=occurred_at,
+            )
 
 
 def _build_leave_now_warning(args: argparse.Namespace) -> str | None:

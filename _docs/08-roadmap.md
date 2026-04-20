@@ -96,7 +96,7 @@ Success criteria:
 Build:
 - trigger run logs
 - usefulness feedback capture
-- source quality feedback capture
+- source quality feedback capture (minimal audit-derived persistence now implemented)
 - review.trigger_quality
 
 Success criteria:

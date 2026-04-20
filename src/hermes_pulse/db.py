@@ -56,6 +56,17 @@ SCHEMA_STATEMENTS = (
         superseded_by_higher_authority INTEGER NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS feedback_log (
+        feedback_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        category TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        signal TEXT NOT NULL,
+        value TEXT NOT NULL,
+        recorded_at TEXT NOT NULL
+    )
+    """,
 )
 
 
@@ -232,3 +243,36 @@ def record_suppression(
         )
         connection.commit()
     return suppression_id
+
+
+def record_feedback(
+    path: str | Path,
+    *,
+    run_id: str,
+    category: str,
+    subject: str,
+    signal: str,
+    value: str,
+    recorded_at: str,
+) -> str:
+    database_path = Path(path)
+    initialize_database(database_path)
+    feedback_id = uuid4().hex
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO feedback_log (
+                feedback_id,
+                run_id,
+                category,
+                subject,
+                signal,
+                value,
+                recorded_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (feedback_id, run_id, category, subject, signal, value, recorded_at),
+        )
+        connection.commit()
+    return feedback_id

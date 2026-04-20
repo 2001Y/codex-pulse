@@ -10,6 +10,7 @@ EXPECTED_TABLES = {
     "source_registry_state",
     "deliveries",
     "suppression_history",
+    "feedback_log",
 }
 
 

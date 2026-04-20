@@ -15,6 +15,7 @@ SOURCE_REGISTRY_PATH = ROOT / "fixtures/source_registry/sample_sources.yaml"
 HERMES_HISTORY_PATH = ROOT / "fixtures/hermes_history/sample_session.json"
 NOTES_PATH = ROOT / "fixtures/notes/sample_notes.md"
 CALENDAR_FIXTURE = ROOT / "fixtures/google_workspace/calendar_leave_now_events.json"
+AUDIT_FIXTURE = ROOT / "fixtures/audit/trigger_quality.json"
 
 
 @pytest.fixture(autouse=True)
@@ -371,6 +372,40 @@ def test_event_trigger_records_run_without_delivery_when_no_output(monkeypatch, 
 
     assert trigger_runs == [("calendar.leave_now", "calendar.leave_now.default", "warning", "completed")]
     assert deliveries == []
+
+
+def test_review_trigger_quality_records_feedback_log(tmp_path: Path) -> None:
+    database_path = tmp_path / "state" / "codex-pulse.db"
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "review-trigger-quality",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--audit-fixture",
+                str(AUDIT_FIXTURE),
+                "--state-db",
+                str(database_path),
+                "--now",
+                "2026-04-20T12:00:00Z",
+            ]
+        )
+        == 0
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        feedback_rows = connection.execute(
+            "SELECT category, subject, signal, value, recorded_at FROM feedback_log ORDER BY category, signal, subject"
+        ).fetchall()
+
+    assert feedback_rows == [
+        ("source_quality", "trusted-secondary-blog", "weak_source", "1", "2026-04-20T12:00:00Z"),
+        ("trigger_quality", "review.trigger_quality", "delivery_failures", "1", "2026-04-20T12:00:00Z"),
+        ("trigger_quality", "review.trigger_quality", "ignored_rate", "9", "2026-04-20T12:00:00Z"),
+        ("trigger_quality", "calendar.leave_now", "late_trigger", "1", "2026-04-20T12:00:00Z"),
+        ("trigger_quality", "review.trigger_quality", "notification_rate", "14", "2026-04-20T12:00:00Z"),
+    ]
 
 
 def test_delivery_failure_marks_trigger_run_failed(monkeypatch, tmp_path: Path) -> None:
