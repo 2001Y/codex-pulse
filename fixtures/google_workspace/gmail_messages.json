@@ -1,0 +1,24 @@
+[
+  {
+    "id": "msg-1",
+    "threadId": "thread-1",
+    "from": "Boss <boss@example.com>",
+    "to": "me@example.com",
+    "subject": "Quarterly review moved",
+    "date": "2026-04-21T07:15:00Z",
+    "snippet": "The quarterly review moved to 11am.",
+    "body": "The quarterly review moved to 11am. Please confirm.",
+    "labels": ["INBOX", "UNREAD"]
+  },
+  {
+    "id": "msg-2",
+    "threadId": "thread-2",
+    "from": "Reservations <reservations@example.com>",
+    "to": "me@example.com",
+    "subject": "Dinner reservation confirmed",
+    "date": "2026-04-21T08:30:00Z",
+    "snippet": "Your reservation is confirmed.",
+    "body": "Your reservation is confirmed for 19:00.",
+    "labels": ["INBOX"]
+  }
+]

@@ -7,6 +7,7 @@ from pathlib import Path
 from hermes_pulse.archive import write_morning_digest_archive
 from hermes_pulse.collection import collect_for_trigger
 from hermes_pulse.connectors.feed_registry import FeedRegistryConnector
+from hermes_pulse.connectors.gmail import GmailConnector
 from hermes_pulse.connectors.google_calendar import GoogleCalendarConnector
 from hermes_pulse.connectors.hermes_history import HermesHistoryConnector
 from hermes_pulse.connectors.known_source_search import KnownSourceSearchConnector
@@ -38,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--feed-fixture", type=Path)
     parser.add_argument("--search-fixture", type=Path)
     parser.add_argument("--calendar-fixture", type=Path)
+    parser.add_argument("--gmail-fixture", type=Path)
     parser.add_argument("--hermes-history", type=Path)
     parser.add_argument("--notes", type=Path)
     parser.add_argument("--archive-root", type=Path)
@@ -82,7 +84,9 @@ def _build_digest(command: str, args: argparse.Namespace) -> list[CollectedItem]
     feed_fetcher = _build_feed_fetcher(args.feed_fixture)
     search_fetcher = _build_feed_fetcher(args.search_fixture)
     calendar_fixture = getattr(args, "calendar_fixture", None)
+    gmail_fixture = getattr(args, "gmail_fixture", None)
     calendar_runner = _build_json_runner(calendar_fixture)
+    gmail_runner = _build_json_runner(gmail_fixture)
     occurred_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     trigger = TriggerEvent(
         id="scheduled:digest.morning.default",
@@ -101,6 +105,8 @@ def _build_digest(command: str, args: argparse.Namespace) -> list[CollectedItem]
     }
     if calendar_runner is not None:
         connectors["google_calendar"] = BoundConnector(lambda: GoogleCalendarConnector(runner=calendar_runner).collect())
+    if gmail_runner is not None:
+        connectors["gmail"] = BoundConnector(lambda: GmailConnector(runner=gmail_runner).collect())
     if args.x_signals:
         signal_types = [value.strip() for value in args.x_signals.split(",") if value.strip()]
         connectors["x_signals"] = BoundConnector(lambda: XUrlConnector().collect(signal_types))
