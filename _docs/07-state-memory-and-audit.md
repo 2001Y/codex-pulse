@@ -16,7 +16,7 @@ Optionally keep raw imported artifacts on disk with references in SQLite.
 
 Current runtime status:
 - minimal schema exists in `src/hermes_pulse/db.py`
-- `codex-pulse --state-db /path/to/db.sqlite3 ...` now records trigger runs, local deliveries, delivered-item suppression history, review/audit-derived feedback logs, approval/action logs for current `action_prep` flows, X-signal connector cursors, and source-registry poll state snapshots (`last_poll_at`, `last_seen_item_ids`, `last_promoted_item_ids`, `authority_tier`)
+- `codex-pulse --state-db /path/to/db.sqlite3 ...` now records trigger runs, local deliveries, delivered-item suppression history, review/audit-derived feedback logs, approval/action logs for current `action_prep` flows, X-signal connector cursors, and source-registry poll state snapshots (`last_poll_at`, `last_seen_item_ids`, `last_promoted_item_ids`, `authority_tier`) plus structured notes
 - digest delivery now also filters active same-trigger suppression entries before archive/summarization, while cursor/state observation still uses raw collected items
 - direct Slack delivery now keeps delivery-specific rendering (Slack-native links + threaded chunking) separate from the canonical archive markdown
 - approval/action logs now support minimal `approve-action` / `reject-action` state transitions, with validation for unknown action IDs, non-pending actions, and invalid execution-detail flag combinations; `complete-action` and `failed-action` can mark approved actions as executed or failed once they are awaiting execution completion, persist structured `execution_details` metadata (receipt/error/provider/store/order/retryable), and record minimal `action_execution` feedback rows

@@ -388,7 +388,7 @@ def test_source_registry_state_updates_promoted_ids_and_preserves_notes(monkeypa
                 '["official-blog:post-1"]',
                 '["official-blog:post-1"]',
                 "primary",
-                "keep this note",
+                '{"review_note": "keep this note"}',
             ),
         )
         connection.commit()
@@ -441,7 +441,7 @@ def test_source_registry_state_updates_promoted_ids_and_preserves_notes(monkeypa
         "2026-04-20T07:35:00Z",
         '["official-blog:post-2"]',
         '["official-blog:post-2"]',
-        "keep this note",
+        '{"review_note": "keep this note", "last_error": null}',
     )
 
 
@@ -501,6 +501,96 @@ def test_source_registry_state_skips_unobserved_sources(monkeypatch, tmp_path: P
         ).fetchall()
 
     assert registry_state == [("official-blog",)]
+
+
+def test_source_registry_state_records_error_metadata_without_overwriting_notes(tmp_path: Path) -> None:
+    database_path = tmp_path / "state" / "hermes-pulse.db"
+    initialize_database(database_path)
+
+    hermes_pulse.cli._record_source_registry_state(
+        database_path,
+        source_registry=[
+            hermes_pulse.cli.SourceRegistryEntry(
+                id="official-blog",
+                source_family="blog",
+                domain="example.com",
+                title="Official blog",
+                acquisition_mode="rss_poll",
+                authority_tier="primary",
+            )
+        ],
+        items=[
+            hermes_pulse.cli.CollectedItem(
+                id="official-blog:post-2",
+                source="official-blog",
+                source_kind="feed_item",
+                title="Official post",
+                provenance=Provenance(
+                    provider="example.com",
+                    acquisition_mode="rss_poll",
+                    authority_tier="primary",
+                    primary_source_url="https://example.com/posts/2",
+                    raw_record_id="post-2",
+                ),
+            )
+        ],
+        occurred_at="2026-04-20T07:45:00Z",
+        source_errors={"official-blog": "feed timeout"},
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            "SELECT notes FROM source_registry_state WHERE registry_id = 'official-blog'"
+        ).fetchone()
+
+    assert row == ('{"last_error": "feed timeout"}',)
+
+
+def test_source_registry_state_records_error_metadata_for_error_only_source(tmp_path: Path) -> None:
+    database_path = tmp_path / "state" / "hermes-pulse.db"
+    initialize_database(database_path)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "INSERT INTO source_registry_state (registry_id, last_poll_at, last_seen_item_ids, last_promoted_item_ids, authority_tier, notes) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "official-blog",
+                "2026-04-19T07:00:00Z",
+                '["official-blog:post-1"]',
+                '["official-blog:post-1"]',
+                "primary",
+                '{"review_note": "keep this note"}',
+            ),
+        )
+        connection.commit()
+
+    hermes_pulse.cli._record_source_registry_state(
+        database_path,
+        source_registry=[
+            hermes_pulse.cli.SourceRegistryEntry(
+                id="official-blog",
+                source_family="blog",
+                domain="example.com",
+                title="Official blog",
+                acquisition_mode="rss_poll",
+                authority_tier="primary",
+            )
+        ],
+        items=[],
+        occurred_at="2026-04-20T07:50:00Z",
+        source_errors={"official-blog": "feed timeout"},
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            "SELECT last_poll_at, last_seen_item_ids, last_promoted_item_ids, notes FROM source_registry_state WHERE registry_id = 'official-blog'"
+        ).fetchone()
+
+    assert row == (
+        "2026-04-20T07:50:00Z",
+        '["official-blog:post-1"]',
+        '["official-blog:post-1"]',
+        '{"review_note": "keep this note", "last_error": "feed timeout"}',
+    )
 
 
 def test_event_trigger_records_run_without_delivery_when_no_output(monkeypatch, tmp_path: Path) -> None:

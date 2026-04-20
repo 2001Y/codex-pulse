@@ -1,5 +1,6 @@
 import argparse
 import json
+import sqlite3
 from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -379,24 +380,79 @@ def _record_connector_cursors_from_items(
         )
 
 
-def _record_source_registry_state(path: Path, *, source_registry: list[SourceRegistryEntry], items: list[CollectedItem], occurred_at: str) -> None:
+def _record_source_registry_state(
+    path: Path,
+    *,
+    source_registry: list[SourceRegistryEntry],
+    items: list[CollectedItem],
+    occurred_at: str,
+    source_errors: dict[str, str] | None = None,
+) -> None:
     item_ids_by_source: dict[str, list[str]] = {}
     for item in items:
         item_ids_by_source.setdefault(item.source, []).append(item.id)
+    source_errors = source_errors or {}
 
     for entry in source_registry:
         if entry.acquisition_mode not in {"rss_poll", "atom_poll", "known_source_search"}:
             continue
-        if entry.id not in item_ids_by_source:
+        if entry.id not in item_ids_by_source and entry.id not in source_errors:
             continue
+        existing_state = _get_source_registry_state(path, registry_id=entry.id)
+        existing_notes = None if existing_state is None else existing_state["notes"]
+        notes_payload = _build_source_registry_notes(existing_notes, last_error=source_errors.get(entry.id))
+        item_ids = item_ids_by_source.get(entry.id)
         upsert_source_registry_state(
             path,
             registry_id=entry.id,
             last_poll_at=occurred_at,
-            last_seen_item_ids=json.dumps(item_ids_by_source.get(entry.id, [])),
-            last_promoted_item_ids=json.dumps(item_ids_by_source.get(entry.id, [])),
+            last_seen_item_ids=json.dumps(item_ids, ensure_ascii=False) if item_ids is not None else (None if existing_state is None else existing_state["last_seen_item_ids"]),
+            last_promoted_item_ids=json.dumps(item_ids, ensure_ascii=False) if item_ids is not None else (None if existing_state is None else existing_state["last_promoted_item_ids"]),
             authority_tier=entry.authority_tier,
+            notes=json.dumps(notes_payload, ensure_ascii=False) if notes_payload is not None else None,
         )
+
+
+def _get_source_registry_state(path: Path, *, registry_id: str) -> dict[str, str | None] | None:
+    with sqlite3.connect(path) as connection:
+        row = connection.execute(
+            "SELECT last_seen_item_ids, last_promoted_item_ids, notes FROM source_registry_state WHERE registry_id = ?",
+            (registry_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "last_seen_item_ids": row[0],
+        "last_promoted_item_ids": row[1],
+        "notes": row[2],
+    }
+
+
+def _get_source_registry_notes(path: Path, *, registry_id: str) -> str | None:
+    state = _get_source_registry_state(path, registry_id=registry_id)
+    if state is None:
+        return None
+    return state["notes"]
+
+
+def _build_source_registry_notes(existing_notes: str | None, *, last_error: str | None) -> dict[str, object] | None:
+    payload: dict[str, object]
+    if existing_notes:
+        try:
+            parsed = json.loads(existing_notes)
+        except json.JSONDecodeError:
+            payload = {"review_note": existing_notes}
+        else:
+            if isinstance(parsed, dict):
+                payload = dict(parsed)
+            else:
+                payload = {"review_note": existing_notes}
+    else:
+        payload = {}
+    if last_error is not None or payload:
+        payload["last_error"] = last_error
+    return payload or None
+
 
 
 def _filter_suppressed_items(path: Path, *, items: list[CollectedItem], trigger_family: str, occurred_at: str) -> list[CollectedItem]:
