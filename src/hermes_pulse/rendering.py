@@ -148,6 +148,36 @@ def render_trigger_quality_review(items: Iterable[CollectedItem]) -> str | None:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def render_gap_window_mini_digest(items: Iterable[CollectedItem], *, now: datetime) -> str | None:
+    calendar_items = [item for item in items if item.source == "google_calendar" and item.timestamps and item.timestamps.start_at]
+    if not calendar_items:
+        return None
+    current_end = None
+    next_item = None
+    for item in sorted(calendar_items, key=lambda value: value.timestamps.start_at or ""):
+        start_at = _parse_timestamp(item.timestamps.start_at)
+        end_at = _parse_timestamp(item.timestamps.end_at) if item.timestamps.end_at else start_at
+        if end_at <= now:
+            current_end = end_at
+            continue
+        if start_at > now:
+            next_item = item
+            break
+    if current_end is None or next_item is None:
+        return None
+    gap_minutes = int((_parse_timestamp(next_item.timestamps.start_at) - now).total_seconds() // 60)
+    if gap_minutes < 30:
+        return None
+    lines = [
+        "# Gap window",
+        "",
+        f"- {gap_minutes} min free",
+        f"- Next event: {next_item.title or next_item.id}",
+        f"- Starts at: {next_item.timestamps.start_at}",
+    ]
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _render_section(
     section_name: str,
     candidates: list[Candidate],

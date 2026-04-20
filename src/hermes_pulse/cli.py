@@ -19,6 +19,7 @@ from hermes_pulse.delivery.local_markdown import LocalMarkdownDelivery
 from hermes_pulse.models import CollectedItem, TriggerEvent, TriggerScope
 from hermes_pulse.rendering import (
     render_feed_update_nudge,
+    render_gap_window_mini_digest,
     render_leave_now_warning,
     render_location_arrival_mini_digest,
     render_mail_operational_warning,
@@ -56,6 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
             "feed-update",
             "location-arrival",
             "review-trigger-quality",
+            "gap-window-mini-digest",
         ),
     )
     parser.add_argument("--source-registry", type=Path)
@@ -99,6 +101,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         markdown = _build_location_arrival(args)
     elif args.command == "review-trigger-quality":
         markdown = _build_review_trigger_quality(args)
+    elif args.command == "gap-window-mini-digest":
+        markdown = _build_gap_window(args)
     else:
         return 0
 
@@ -140,6 +144,12 @@ def _build_location_arrival(args: argparse.Namespace) -> str | None:
 def _build_review_trigger_quality(args: argparse.Namespace) -> str | None:
     items = _build_event_trigger_items("review.trigger_quality.default", args)
     return render_trigger_quality_review(items)
+
+
+def _build_gap_window(args: argparse.Namespace) -> str | None:
+    items = _build_event_trigger_items("calendar.gap_window.default", args)
+    now = _parse_timestamp(args.now) if args.now else datetime.now(timezone.utc)
+    return render_gap_window_mini_digest(items, now=now)
 
 
 def _build_event_trigger_items(profile_id: str, args: argparse.Namespace) -> list[CollectedItem]:

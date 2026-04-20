@@ -67,6 +67,15 @@ TRIGGER_REGISTRY = {
         action_ceiling=1,
         cooldown_minutes=30,
     ),
+    "calendar.gap_window.default": TriggerProfile(
+        id="calendar.gap_window.default",
+        family="event",
+        event_type="calendar.gap_window",
+        collection_preset="calendar_gap_window",
+        output_mode="mini_digest",
+        action_ceiling=1,
+        cooldown_minutes=30,
+    ),
     "review.trigger_quality.default": TriggerProfile(
         id="review.trigger_quality.default",
         family="review",

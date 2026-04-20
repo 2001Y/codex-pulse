@@ -1,0 +1,24 @@
+[
+  {
+    "id": "event-morning",
+    "summary": "Morning meeting",
+    "description": "Wrap up sync",
+    "start": "2026-04-21T09:00:00Z",
+    "end": "2026-04-21T10:00:00Z",
+    "location": "Office",
+    "htmlLink": "https://calendar.google.com/calendar/event?eid=event-morning",
+    "attendees": ["alice@example.com"],
+    "travel_minutes": 5
+  },
+  {
+    "id": "event-afternoon",
+    "summary": "Afternoon check-in",
+    "description": "Next scheduled item",
+    "start": "2026-04-21T12:30:00Z",
+    "end": "2026-04-21T13:00:00Z",
+    "location": "Cafe",
+    "htmlLink": "https://calendar.google.com/calendar/event?eid=event-afternoon",
+    "attendees": ["bob@example.com"],
+    "travel_minutes": 10
+  }
+]
