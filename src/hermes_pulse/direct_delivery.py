@@ -44,6 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--hermes-history", type=Path)
     parser.add_argument("--notes", type=Path)
     parser.add_argument("--archive-root", type=Path)
+    parser.add_argument("--x-signals")
     parser.add_argument("--channel", required=True)
     parser.add_argument("--thread-ts")
     return parser

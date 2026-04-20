@@ -9,6 +9,7 @@ from hermes_pulse.connectors.feed_registry import FeedRegistryConnector
 from hermes_pulse.connectors.hermes_history import HermesHistoryConnector
 from hermes_pulse.connectors.known_source_search import KnownSourceSearchConnector
 from hermes_pulse.connectors.notes import NotesConnector
+from hermes_pulse.connectors.x_url import XUrlConnector
 from hermes_pulse.delivery.local_markdown import LocalMarkdownDelivery
 from hermes_pulse.models import CollectedItem, TriggerEvent, TriggerScope
 from hermes_pulse.source_registry import load_source_registry
@@ -38,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--notes", type=Path)
     parser.add_argument("--archive-root", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--x-signals")
     return parser
 
 
@@ -84,6 +86,9 @@ def _build_morning_digest(args: argparse.Namespace) -> list[CollectedItem]:
             lambda: KnownSourceSearchConnector(fetcher=search_fetcher).collect(source_registry)
         ),
     }
+    if args.x_signals:
+        signal_types = [value.strip() for value in args.x_signals.split(",") if value.strip()]
+        connectors["x_signals"] = BoundConnector(lambda: XUrlConnector().collect(signal_types))
     if args.hermes_history is not None:
         connectors["hermes_history"] = BoundConnector(
             lambda: HermesHistoryConnector().collect(args.hermes_history)

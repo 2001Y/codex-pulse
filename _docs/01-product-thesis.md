@@ -120,9 +120,10 @@ The architecture should remain valid when run:
 - known-source retrieval registries
 - ChatGPT history where feasible
 - Grok history where feasible
-- X home timeline diff
 - X bookmarks
 - X likes
+- X reverse chronological home timeline
+- X For You timeline is explicitly out of scope for v1
 
 ### Strong future candidates
 - Google Photos

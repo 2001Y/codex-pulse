@@ -104,9 +104,10 @@ SSOT rules are strict:
 | Notes / docs | `local_store` | local markdown/text/doc artifacts explicitly pointed at by the user or configured paths | implemented minimally |
 | ChatGPT history | `official_export` | official OpenAI export zip or other raw user-owned export artifact | planned |
 | Grok history | `manual_import` | raw user-owned artifacts only until an official export path exists | planned |
-| X bookmarks | `official_api` | X API via `x-cli` with user credentials and sufficient paid tier | planned |
-| X likes | `official_api` | X API via `x-cli` with user credentials and sufficient paid tier | planned |
-| X home timeline diff | out of scope | no v1 implementation until an authoritative, stable, automation-safe official path is verified | out of scope |
+| X bookmarks | `official_api` | official X API via `xurl` with OAuth 2.0 user context | implemented |
+| X likes | `official_api` | official X API via `xurl` with OAuth 2.0 user context | implemented |
+| X reverse chronological home timeline | `official_api` | official X API via `xurl` hitting `/2/users/{id}/timelines/reverse_chronological` | implemented |
+| X For You timeline | out of scope | recommendation-defined surface; do not treat as SSOT-grade canonical acquisition | out of scope |
 | RSS / Atom source registries | `rss_poll` / `atom_poll` | curated source registry with raw feed artifact retention | implemented |
 | Known-source domain registries | `known_source_search` | domain-constrained retrieval from registered trusted sources | implemented |
 | Maps saved places | out of scope | do not claim support before a stable export or official API path is chosen | out of scope |
@@ -131,18 +132,16 @@ SSOT rules are strict:
 - Concrete choice in v1:
   - support `bookmarks`
   - support `likes`
-  - do **not** support `home timeline diff`
+  - support `reverse chronological home timeline`
+  - do **not** support `For You`
 - Why:
   - bookmarks and likes are explicit user signals and map naturally to authenticated API surfaces
-  - home timeline is high-noise and the official/stable acquisition surface is not yet fixed enough for SSOT-grade implementation in this project
+  - reverse chronological home timeline now has an official acquisition path via `/2/users/{id}/timelines/reverse_chronological`
+  - `For You` remains recommendation-defined and is not SSOT-grade enough for this project
 - Operational requirement:
-  - `x-cli`
-  - `X_API_KEY`
-  - `X_API_SECRET`
-  - `X_BEARER_TOKEN`
-  - `X_ACCESS_TOKEN`
-  - `X_ACCESS_TOKEN_SECRET`
-  - paid X tier if the endpoint requires it
+  - `xurl`
+  - OAuth 2.0 user-context app registration in the X developer portal
+  - app moved to an X package/environment that allows `/2/*` reads
 
 ### ChatGPT
 - Canonical path: `official_export`

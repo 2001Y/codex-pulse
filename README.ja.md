@@ -57,7 +57,7 @@ source family:
 - Maps / saved places / location history
 - Hermes Agent 会話履歴
 - ChatGPT / Grok の履歴（local / export / share / manual で取れる範囲）
-- X bookmarks / likes（home timeline diff は stable な official path を確認できるまで対象外）
+- X bookmarks / likes / reverse chronological home timeline（公式X API path として `xurl` を使う）
 - 公式ブログ、press room、changelog、research lab、分野特化メディア、専門家ブログなどの RSS / Atom feed
 - generic web search より固い探索基盤として使う known-source registry
 
@@ -89,8 +89,8 @@ source family:
 - その後に external deltas や passive signals
 
 X の内部では:
-- `bookmark > like`
-- `home timeline diff` は stable な official acquisition path を確認できるまで v1 対象外
+- `bookmark > like > reverse chronological home timeline`
+- `For You` は recommendation 定義で SSOT-grade な acquisition surface ではないため v1 対象外
 
 ### 4. Deliver
 選んだ runtime / channel へ配信するか、次の action 準備まで進めます。

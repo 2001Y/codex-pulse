@@ -11,7 +11,7 @@ Morning and evening editions are now modeled as scheduled trigger profiles insid
 - trigger self-review
 
 Hermes-specific assumptions were removed from the core architecture and retained only as runtime or acquisition examples.
-X timeline diff remains first-class, but it no longer defines the top-level system shape.
+The X work remains first-class, but it is now framed around official `xurl` / X API signals (`bookmarks`, `likes`, `reverse chronological home timeline`) rather than legacy "timeline diff" wording.
 
 ## Why the old shape was replaced
 

@@ -55,7 +55,7 @@ Success criteria:
 - X adds value without dominating output
 - dedupe across bookmark/like works
 - delivered IDs and suppression behave correctly
-- the project does not claim home timeline support before a stable official path exists
+- the project keeps X support aligned with official `xurl`/X API surfaces and does not claim `For You` support in v1
 
 ### Phase 4 — cross-agent memory imports
 Build:

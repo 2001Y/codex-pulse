@@ -274,4 +274,62 @@ def test_pyproject_declares_console_entrypoint() -> None:
 
 
 def test_cli_parser_uses_codex_pulse_program_name() -> None:
-    assert hermes_pulse.cli.build_parser().prog == "codex-pulse"
+    parser = hermes_pulse.cli.build_parser()
+
+    assert parser.prog == "codex-pulse"
+    assert parser.parse_args(["morning-digest", "--x-signals", "bookmarks,likes"]).x_signals == "bookmarks,likes"
+
+
+def test_morning_digest_collects_configured_x_signals(monkeypatch, tmp_path: Path) -> None:
+    xurl_calls: list[dict[str, object]] = []
+    _install_stub_codex_summarizer(monkeypatch)
+
+    class FakeXConnector:
+        def collect(self, signal_types: list[str]):
+            xurl_calls.append({"signal_types": signal_types})
+            return [
+                CollectedItem(
+                    id="x-bookmarks:tweet-1",
+                    source="x_bookmarks",
+                    source_kind="post",
+                    title="Saved launch thread",
+                    excerpt="A saved X post.",
+                    url="https://x.com/example/status/1",
+                    timestamps=ItemTimestamps(created_at="2026-04-20T08:00:00Z"),
+                    provenance=Provenance(
+                        provider="x.com",
+                        acquisition_mode="official_api",
+                        authority_tier="primary",
+                        primary_source_url="https://x.com/example/status/1",
+                        raw_record_id="1",
+                    ),
+                    citation_chain=[
+                        CitationLink(
+                            label="Saved launch thread",
+                            url="https://x.com/example/status/1",
+                            relation="primary",
+                        )
+                    ],
+                )
+            ]
+
+    monkeypatch.setattr(hermes_pulse.cli, "XUrlConnector", FakeXConnector)
+    output_path = tmp_path / "deliveries" / "morning-digest.md"
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--x-signals",
+                "bookmarks,likes",
+                "--output",
+                str(output_path),
+            ]
+        )
+        == 0
+    )
+
+    assert xurl_calls == [{"signal_types": ["bookmarks", "likes"]}]
+    assert "Saved launch thread" in output_path.read_text()
