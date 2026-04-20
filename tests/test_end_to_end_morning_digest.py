@@ -10,6 +10,7 @@ from hermes_pulse.connectors.known_source_search import KnownSourceSearchConnect
 from hermes_pulse.connectors.notes import NotesConnector
 from hermes_pulse.models import TriggerEvent, TriggerScope
 from hermes_pulse.source_registry import load_source_registry
+from hermes_pulse.summarization.base import SummaryArtifact
 from hermes_pulse.synthesis import synthesize_candidates
 from hermes_pulse.trigger_registry import get_trigger_profile
 
@@ -22,6 +23,24 @@ HERMES_HISTORY_PATH = ROOT / "fixtures/hermes_history/sample_session.json"
 NOTES_PATH = ROOT / "fixtures/notes/sample_notes.md"
 
 
+def _install_stub_codex_summarizer(monkeypatch) -> list[dict[str, object]]:
+    calls: list[dict[str, object]] = []
+
+    class StubCodexCliSummarizer:
+        def summarize_archive(self, archive_directory: str | Path) -> SummaryArtifact:
+            archive_directory = Path(archive_directory)
+            raw_items = json.loads((archive_directory / "raw" / "collected-items.json").read_text())
+            content = "# Codex Digest\n\n" + "".join(f"- {item['title']}\n" for item in raw_items)
+            output_path = archive_directory / "summary" / "codex-digest.md"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(content)
+            calls.append({"archive_directory": archive_directory, "raw_items": raw_items})
+            return SummaryArtifact(path=output_path, content=content)
+
+    monkeypatch.setattr(hermes_pulse.cli, "CodexCliSummarizer", StubCodexCliSummarizer)
+    return calls
+
+
 class BoundConnector:
     def __init__(self, collector):
         self._collector = collector
@@ -30,7 +49,8 @@ class BoundConnector:
         return self._collector()
 
 
-def test_end_to_end_scheduled_morning_digest_runs_against_fixtures(tmp_path: Path) -> None:
+def test_end_to_end_scheduled_morning_digest_runs_against_fixtures(monkeypatch, tmp_path: Path) -> None:
+    codex_calls = _install_stub_codex_summarizer(monkeypatch)
     profile = get_trigger_profile("digest.morning.default")
     assert profile.event_type == "digest.morning"
     assert profile.collection_preset == "broad_day_start"
@@ -108,16 +128,19 @@ def test_end_to_end_scheduled_morning_digest_runs_against_fixtures(tmp_path: Pat
 
     markdown = output_path.read_text()
     assert output_path.exists()
-    assert markdown.startswith("# Morning Digest\n")
+    assert markdown.startswith("# Codex Digest\n")
     assert "Launch update" in markdown
     assert "Discovery scoop" in markdown
     assert "Morning planning" in markdown
     assert "Notes" in markdown
-    assert "https://example.com/posts/launch-update" in markdown
-    assert "Citations: primary: [Launch update](https://example.com/posts/launch-update)" in markdown
+    assert codex_calls[0]["archive_directory"].name == date.today().isoformat()
+    assert any(item["url"] == "https://example.com/posts/launch-update" for item in codex_calls[0]["raw_items"])
 
 
-def test_end_to_end_morning_digest_archives_feed_and_local_context_items(tmp_path: Path) -> None:
+def test_end_to_end_morning_digest_archives_feed_and_local_context_items(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _install_stub_codex_summarizer(monkeypatch)
     output_path = tmp_path / "deliveries" / "morning-digest.md"
     archive_root = tmp_path / "pulse-archive"
     archive_date = date.today().isoformat()
@@ -145,11 +168,12 @@ def test_end_to_end_morning_digest_archives_feed_and_local_context_items(tmp_pat
         == 0
     )
 
-    summary_path = archive_root / archive_date / "summary" / "morning-digest.md"
+    summary_path = archive_root / archive_date / "summary" / "codex-digest.md"
     raw_items_path = archive_root / archive_date / "raw" / "collected-items.json"
     raw_items = json.loads(raw_items_path.read_text())
 
     assert summary_path.read_text() == output_path.read_text()
+    assert not (archive_root / archive_date / "summary" / "morning-digest.md").exists()
     assert {item["source"] for item in raw_items} == {
         "official-blog",
         "trusted-secondary-blog",

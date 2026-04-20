@@ -11,9 +11,8 @@ from hermes_pulse.connectors.known_source_search import KnownSourceSearchConnect
 from hermes_pulse.connectors.notes import NotesConnector
 from hermes_pulse.delivery.local_markdown import LocalMarkdownDelivery
 from hermes_pulse.models import CollectedItem, TriggerEvent, TriggerScope
-from hermes_pulse.rendering import render_morning_digest
 from hermes_pulse.source_registry import load_source_registry
-from hermes_pulse.synthesis import synthesize_candidates
+from hermes_pulse.summarization import CodexCliSummarizer
 from hermes_pulse.trigger_registry import get_trigger_profile
 
 
@@ -44,29 +43,27 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(list(argv) if argv is not None else None)
-    items: list[CollectedItem] = []
+    markdown: str | None = None
 
     if args.command == "morning-digest":
-        markdown, items = _build_morning_digest(args)
+        items = _build_morning_digest(args)
         archive_root = args.archive_root or Path.home() / "Pulse"
-        write_morning_digest_archive(
-            markdown=markdown,
+        archive_directory = write_morning_digest_archive(
             items=items,
             archive_root=archive_root,
             archive_date=date.today().isoformat(),
         )
-    elif args.output is not None:
-        markdown = render_morning_digest([], [])
+        markdown = CodexCliSummarizer().summarize_archive(archive_directory).content
     else:
         return 0
 
-    if args.output is not None:
+    if args.output is not None and markdown is not None:
         LocalMarkdownDelivery().deliver(markdown, args.output)
 
     return 0
 
 
-def _build_morning_digest(args: argparse.Namespace) -> tuple[str, list[CollectedItem]]:
+def _build_morning_digest(args: argparse.Namespace) -> list[CollectedItem]:
     profile = get_trigger_profile("digest.morning.default")
     source_registry = load_source_registry(args.source_registry or DEFAULT_SOURCE_REGISTRY)
     feed_fetcher = _build_feed_fetcher(args.feed_fixture)
@@ -93,9 +90,7 @@ def _build_morning_digest(args: argparse.Namespace) -> tuple[str, list[Collected
         )
     if args.notes is not None:
         connectors["notes"] = BoundConnector(lambda: NotesConnector().collect(args.notes))
-    items = collect_for_trigger(trigger, profile, connectors)
-    candidates = synthesize_candidates(items)
-    return render_morning_digest(candidates, items), items
+    return collect_for_trigger(trigger, profile, connectors)
 
 
 def _build_feed_fetcher(feed_fixture: Path | None) -> Callable[[str], str] | None:

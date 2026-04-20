@@ -5,6 +5,7 @@ from pathlib import Path
 
 import hermes_pulse.cli
 from hermes_pulse.models import CitationLink, CollectedItem, ItemTimestamps, Provenance
+from hermes_pulse.summarization.base import SummaryArtifact
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,22 +14,48 @@ HERMES_HISTORY_PATH = ROOT / "fixtures/hermes_history/sample_session.json"
 NOTES_PATH = ROOT / "fixtures/notes/sample_notes.md"
 
 
+def _install_stub_codex_summarizer(monkeypatch, template: str | None = None) -> list[dict[str, object]]:
+    calls: list[dict[str, object]] = []
+
+    class StubCodexCliSummarizer:
+        def summarize_archive(self, archive_directory: str | Path) -> SummaryArtifact:
+            archive_directory = Path(archive_directory)
+            raw_items = json.loads((archive_directory / "raw" / "collected-items.json").read_text())
+            content = template or "# Codex Digest\n\n" + "".join(
+                f"- {item['title']}\n" for item in raw_items
+            )
+            output_path = archive_directory / "summary" / "codex-digest.md"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(content)
+            calls.append(
+                {
+                    "archive_directory": archive_directory,
+                    "raw_items": raw_items,
+                    "content": content,
+                }
+            )
+            return SummaryArtifact(path=output_path, content=content)
+
+    monkeypatch.setattr(hermes_pulse.cli, "CodexCliSummarizer", StubCodexCliSummarizer)
+    return calls
+
+
 def test_main_entrypoint_exists_and_exits_successfully() -> None:
     assert hermes_pulse.cli.main([]) == 0
 
 
-def test_main_writes_morning_digest_markdown_to_output_path(tmp_path: Path) -> None:
+def test_main_with_output_only_does_not_write_fallback_digest(tmp_path: Path) -> None:
     output_path = tmp_path / "deliveries" / "morning-digest.md"
 
     assert hermes_pulse.cli.main(["--output", str(output_path)]) == 0
-    assert output_path.exists()
-    assert output_path.read_text().startswith("# Morning Digest\n")
+    assert not output_path.exists()
 
 
 def test_morning_digest_uses_live_feed_fetching_when_no_fixture_is_provided(
     monkeypatch, tmp_path: Path
 ) -> None:
     fetchers: list[object] = []
+    codex_calls = _install_stub_codex_summarizer(monkeypatch)
 
     class FakeFeedRegistryConnector:
         def __init__(self, fetcher=None) -> None:
@@ -87,12 +114,14 @@ def test_morning_digest_uses_live_feed_fetching_when_no_fixture_is_provided(
 
     assert fetchers == [None]
     assert "Live fetch item" in output_path.read_text()
+    assert codex_calls[0]["raw_items"][0]["title"] == "Live fetch item"
 
 
 def test_morning_digest_skips_optional_local_context_when_paths_are_omitted(
     monkeypatch, tmp_path: Path
 ) -> None:
     fetchers: list[object] = []
+    _install_stub_codex_summarizer(monkeypatch)
 
     class FakeFeedRegistryConnector:
         def __init__(self, fetcher=None) -> None:
@@ -159,9 +188,10 @@ def test_morning_digest_skips_optional_local_context_when_paths_are_omitted(
     assert "Live only item" in output_path.read_text()
 
 
-def test_morning_digest_archives_summary_and_raw_items_under_explicit_archive_root(
-    tmp_path: Path,
+def test_morning_digest_archives_raw_items_before_invoking_codex_and_delivers_canonical_digest(
+    monkeypatch, tmp_path: Path
 ) -> None:
+    codex_calls = _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
     output_path = tmp_path / "deliveries" / "morning-digest.md"
     archive_root = tmp_path / "archive-root"
     archive_date = date.today().isoformat()
@@ -185,11 +215,19 @@ def test_morning_digest_archives_summary_and_raw_items_under_explicit_archive_ro
         == 0
     )
 
-    summary_path = archive_root / archive_date / "summary" / "morning-digest.md"
+    summary_path = archive_root / archive_date / "summary" / "codex-digest.md"
     raw_items_path = archive_root / archive_date / "raw" / "collected-items.json"
 
+    assert codex_calls == [
+        {
+            "archive_directory": archive_root / archive_date,
+            "raw_items": json.loads(raw_items_path.read_text()),
+            "content": "# Codex Digest\n\n- Canonical summary\n",
+        }
+    ]
     assert summary_path.exists()
     assert summary_path.read_text() == output_path.read_text()
+    assert not (archive_root / archive_date / "summary" / "morning-digest.md").exists()
     raw_items = json.loads(raw_items_path.read_text())
     assert [item["source"] for item in raw_items] == ["hermes_history", "notes"]
     assert raw_items[0]["id"] == "session-123"
@@ -199,6 +237,7 @@ def test_morning_digest_defaults_archive_root_to_home_pulse_directory(
     monkeypatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(hermes_pulse.cli.Path, "home", classmethod(lambda cls: tmp_path))
+    _install_stub_codex_summarizer(monkeypatch)
     archive_date = date.today().isoformat()
 
     assert (
@@ -216,11 +255,11 @@ def test_morning_digest_defaults_archive_root_to_home_pulse_directory(
         == 0
     )
 
-    summary_path = tmp_path / "Pulse" / archive_date / "summary" / "morning-digest.md"
+    summary_path = tmp_path / "Pulse" / archive_date / "summary" / "codex-digest.md"
     raw_items_path = tmp_path / "Pulse" / archive_date / "raw" / "collected-items.json"
 
     assert summary_path.exists()
-    assert summary_path.read_text().startswith("# Morning Digest\n")
+    assert summary_path.read_text().startswith("# Codex Digest\n")
     raw_items = json.loads(raw_items_path.read_text())
     assert len(raw_items) == 2
     assert raw_items[1]["id"] == "sample_notes"
