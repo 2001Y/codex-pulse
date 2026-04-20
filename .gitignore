@@ -5,3 +5,5 @@ dist/
 *.sqlite
 *.db
 coverage/
+__pycache__/
+*.py[cod]
