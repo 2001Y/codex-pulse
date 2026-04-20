@@ -67,6 +67,15 @@ TRIGGER_REGISTRY = {
         action_ceiling=1,
         cooldown_minutes=30,
     ),
+    "review.trigger_quality.default": TriggerProfile(
+        id="review.trigger_quality.default",
+        family="review",
+        event_type="review.trigger_quality",
+        collection_preset="trigger_quality_audit",
+        output_mode="source_audit",
+        action_ceiling=0,
+        cooldown_minutes=1440,
+    ),
 }
 
 

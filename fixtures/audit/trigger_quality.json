@@ -1,0 +1,7 @@
+{
+  "notification_rate": 14,
+  "ignored_rate": 9,
+  "late_triggers": ["calendar.leave_now"],
+  "weak_sources": ["trusted-secondary-blog"],
+  "delivery_failures": 1
+}

@@ -255,3 +255,29 @@ def test_location_arrival_invokes_location_connector_only() -> None:
     assert collected == ["location_context"]
     assert location_context.calls == 1
     assert gmail.calls == 0
+
+
+def test_review_trigger_quality_invokes_audit_connector_only() -> None:
+    profile = get_trigger_profile("review.trigger_quality.default")
+    trigger = TriggerEvent(
+        id="trigger-8",
+        type=profile.event_type,
+        profile_id=profile.id,
+        occurred_at="2026-04-21T20:00:00Z",
+        scope=TriggerScope(),
+    )
+    audit_context = StubConnector("audit_context")
+    feed = StubConnector("feed_registry")
+
+    collected = collect_for_trigger(
+        trigger,
+        profile,
+        {
+            audit_context.id: audit_context,
+            feed.id: feed,
+        },
+    )
+
+    assert collected == ["audit_context"]
+    assert audit_context.calls == 1
+    assert feed.calls == 0

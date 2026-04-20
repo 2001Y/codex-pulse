@@ -6,6 +6,7 @@ from pathlib import Path
 
 from hermes_pulse.archive import write_morning_digest_archive
 from hermes_pulse.collection import collect_for_trigger
+from hermes_pulse.connectors.audit_context import AuditContextConnector, load_audit_context_fixture
 from hermes_pulse.connectors.feed_registry import FeedRegistryConnector
 from hermes_pulse.connectors.gmail import GmailConnector
 from hermes_pulse.connectors.google_calendar import GoogleCalendarConnector
@@ -22,6 +23,7 @@ from hermes_pulse.rendering import (
     render_location_arrival_mini_digest,
     render_mail_operational_warning,
     render_shopping_replenishment_action_prep,
+    render_trigger_quality_review,
 )
 from hermes_pulse.source_registry import load_source_registry
 from hermes_pulse.summarization import CodexCliSummarizer
@@ -53,6 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
             "shopping-replenishment",
             "feed-update",
             "location-arrival",
+            "review-trigger-quality",
         ),
     )
     parser.add_argument("--source-registry", type=Path)
@@ -61,6 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--calendar-fixture", type=Path)
     parser.add_argument("--gmail-fixture", type=Path)
     parser.add_argument("--location-fixture", type=Path)
+    parser.add_argument("--audit-fixture", type=Path)
     parser.add_argument("--hermes-history", type=Path)
     parser.add_argument("--notes", type=Path)
     parser.add_argument("--archive-root", type=Path)
@@ -93,6 +97,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         markdown = _build_feed_update(args)
     elif args.command == "location-arrival":
         markdown = _build_location_arrival(args)
+    elif args.command == "review-trigger-quality":
+        markdown = _build_review_trigger_quality(args)
     else:
         return 0
 
@@ -131,6 +137,11 @@ def _build_location_arrival(args: argparse.Namespace) -> str | None:
     return render_location_arrival_mini_digest(items)
 
 
+def _build_review_trigger_quality(args: argparse.Namespace) -> str | None:
+    items = _build_event_trigger_items("review.trigger_quality.default", args)
+    return render_trigger_quality_review(items)
+
+
 def _build_event_trigger_items(profile_id: str, args: argparse.Namespace) -> list[CollectedItem]:
     profile = get_trigger_profile(profile_id)
     source_registry = load_source_registry(args.source_registry or DEFAULT_SOURCE_REGISTRY)
@@ -139,6 +150,7 @@ def _build_event_trigger_items(profile_id: str, args: argparse.Namespace) -> lis
     calendar_fixture = getattr(args, "calendar_fixture", None)
     gmail_fixture = getattr(args, "gmail_fixture", None)
     location_fixture = getattr(args, "location_fixture", None)
+    audit_fixture = getattr(args, "audit_fixture", None)
     notes_path = getattr(args, "notes", None)
     calendar_runner = _build_json_runner(calendar_fixture)
     gmail_runner = _build_json_runner(gmail_fixture)
@@ -167,6 +179,10 @@ def _build_event_trigger_items(profile_id: str, args: argparse.Namespace) -> lis
     if location_fixture is not None:
         connectors["location_context"] = BoundConnector(
             lambda: LocationContextConnector(runner=lambda: load_location_context_fixture(location_fixture)).collect()
+        )
+    if audit_fixture is not None:
+        connectors["audit_context"] = BoundConnector(
+            lambda: AuditContextConnector(runner=lambda: load_audit_context_fixture(audit_fixture)).collect()
         )
     return collect_for_trigger(trigger, profile, connectors)
 

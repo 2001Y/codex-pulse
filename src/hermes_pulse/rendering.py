@@ -138,6 +138,16 @@ def render_location_arrival_mini_digest(items: Iterable[CollectedItem]) -> str |
     return "\n".join(lines).rstrip() + "\n"
 
 
+def render_trigger_quality_review(items: Iterable[CollectedItem]) -> str | None:
+    item = next((value for value in items if value.source == "audit_context"), None)
+    if item is None:
+        return None
+    lines = ["# Trigger quality review", ""]
+    for line in (item.body or "").splitlines():
+        lines.append(f"- {line}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _render_section(
     section_name: str,
     candidates: list[Candidate],
