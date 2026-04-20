@@ -29,7 +29,7 @@ class BoundConnector:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="hermes-pulse")
+    parser = argparse.ArgumentParser(prog="codex-pulse")
     parser.add_argument("command", nargs="?", choices=("morning-digest",))
     parser.add_argument("--source-registry", type=Path)
     parser.add_argument("--feed-fixture", type=Path)

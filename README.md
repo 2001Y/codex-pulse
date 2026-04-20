@@ -1,8 +1,8 @@
-# Hermes Pulse
+# Codex Pulse
 
 English README / [日本語版README](./README.ja.md)
 
-Hermes Pulse is a Hermes-first, source-rigorous personal briefing and operating pipeline for scheduled and proactive delivery.
+Codex Pulse is a Hermes-first, source-rigorous personal briefing and operating pipeline for scheduled and proactive delivery.
 
 This repository is organized around one practical flow:
 
@@ -15,7 +15,7 @@ Today, the primary target runtime is **Hermes Agent**. The design may later be a
 
 ## Visual summary
 
-![Hermes Pulse overview](./assets/overview-architecture.svg)
+![Codex Pulse overview](./assets/overview-architecture.svg)
 
 ## What this repo does
 

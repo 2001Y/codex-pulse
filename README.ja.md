@@ -1,8 +1,8 @@
-# Hermes Pulse
+# Codex Pulse
 
 日本語版README / [English README](./README.md)
 
-Hermes Pulse は、Hermes-first で、source-rigorous な personal briefing / operating pipeline です。定期配信にも proactive 配信にも対応し、必要なら専門家レベルまで深掘りできることを目指します。
+Codex Pulse は、Hermes-first で、source-rigorous な personal briefing / operating pipeline です。定期配信にも proactive 配信にも対応し、必要なら専門家レベルまで深掘りできることを目指します。
 
 このリポジトリは、次の 4 ステップを中心に構成します。
 
@@ -15,7 +15,7 @@ Hermes Pulse は、Hermes-first で、source-rigorous な personal briefing / op
 
 ## 全体像
 
-![Hermes Pulse 全体像](./assets/overview-architecture.ja.svg)
+![Codex Pulse 全体像](./assets/overview-architecture.ja.svg)
 
 ## このリポジトリがやること
 

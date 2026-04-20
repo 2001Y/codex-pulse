@@ -1,7 +1,7 @@
 {
-  "name": "hermes-pulse",
+  "name": "codex-pulse",
   "private": false,
   "version": "0.3.0",
-  "description": "Hermes Pulse — Hermes-first source-rigorous briefing and expert-depth operating pipeline",
+  "description": "Codex Pulse — Hermes-first source-rigorous briefing and expert-depth operating pipeline",
   "license": "MIT"
 }

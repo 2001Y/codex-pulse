@@ -10,7 +10,7 @@ from hermes_pulse.models import CitationLink, CollectedItem, Provenance, SourceR
 
 logger = logging.getLogger(__name__)
 DEFAULT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; HermesPulse/0.1; +https://github.com/nousresearch/hermes-pulse)",
+    "User-Agent": "Mozilla/5.0 (compatible; CodexPulse/0.1; +https://github.com/2001Y/codex-pulse)",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 SEARCH_ENDPOINT = "https://html.duckduckgo.com/html/"
