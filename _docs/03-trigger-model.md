@@ -54,6 +54,12 @@ These improve the system itself.
 | `shopping.replenishment` | repurchase / refill / restock | `action_prep` | 2 |
 | `review.trigger_quality` | self-improvement | `source_audit` | 0 |
 
+Current implementation note:
+- `feed.update.default` currently renders a minimal `nudge`
+- `calendar.leave_now.default` currently renders a minimal `warning`
+- `mail.operational.default` currently renders a minimal `warning`
+- `shopping.replenishment.default` currently renders a minimal `action_prep`
+
 ## TriggerProfile examples
 
 ### Morning
