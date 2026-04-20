@@ -58,6 +58,15 @@ TRIGGER_REGISTRY = {
         action_ceiling=1,
         cooldown_minutes=60,
     ),
+    "location.arrival.default": TriggerProfile(
+        id="location.arrival.default",
+        family="event",
+        event_type="location.arrival",
+        collection_preset="location_arrival",
+        output_mode="mini_digest",
+        action_ceiling=1,
+        cooldown_minutes=30,
+    ),
 }
 
 

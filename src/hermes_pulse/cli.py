@@ -11,6 +11,7 @@ from hermes_pulse.connectors.gmail import GmailConnector
 from hermes_pulse.connectors.google_calendar import GoogleCalendarConnector
 from hermes_pulse.connectors.hermes_history import HermesHistoryConnector
 from hermes_pulse.connectors.known_source_search import KnownSourceSearchConnector
+from hermes_pulse.connectors.location_context import LocationContextConnector, load_location_context_fixture
 from hermes_pulse.connectors.notes import NotesConnector
 from hermes_pulse.connectors.x_url import XUrlConnector
 from hermes_pulse.delivery.local_markdown import LocalMarkdownDelivery
@@ -18,6 +19,7 @@ from hermes_pulse.models import CollectedItem, TriggerEvent, TriggerScope
 from hermes_pulse.rendering import (
     render_feed_update_nudge,
     render_leave_now_warning,
+    render_location_arrival_mini_digest,
     render_mail_operational_warning,
     render_shopping_replenishment_action_prep,
 )
@@ -50,6 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
             "mail-operational",
             "shopping-replenishment",
             "feed-update",
+            "location-arrival",
         ),
     )
     parser.add_argument("--source-registry", type=Path)
@@ -57,6 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--search-fixture", type=Path)
     parser.add_argument("--calendar-fixture", type=Path)
     parser.add_argument("--gmail-fixture", type=Path)
+    parser.add_argument("--location-fixture", type=Path)
     parser.add_argument("--hermes-history", type=Path)
     parser.add_argument("--notes", type=Path)
     parser.add_argument("--archive-root", type=Path)
@@ -87,6 +91,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         markdown = _build_shopping_replenishment(args)
     elif args.command == "feed-update":
         markdown = _build_feed_update(args)
+    elif args.command == "location-arrival":
+        markdown = _build_location_arrival(args)
     else:
         return 0
 
@@ -120,6 +126,11 @@ def _build_feed_update(args: argparse.Namespace) -> str | None:
     return render_feed_update_nudge(items)
 
 
+def _build_location_arrival(args: argparse.Namespace) -> str | None:
+    items = _build_event_trigger_items("location.arrival.default", args)
+    return render_location_arrival_mini_digest(items)
+
+
 def _build_event_trigger_items(profile_id: str, args: argparse.Namespace) -> list[CollectedItem]:
     profile = get_trigger_profile(profile_id)
     source_registry = load_source_registry(args.source_registry or DEFAULT_SOURCE_REGISTRY)
@@ -127,6 +138,7 @@ def _build_event_trigger_items(profile_id: str, args: argparse.Namespace) -> lis
     search_fetcher = _build_feed_fetcher(getattr(args, "search_fixture", None))
     calendar_fixture = getattr(args, "calendar_fixture", None)
     gmail_fixture = getattr(args, "gmail_fixture", None)
+    location_fixture = getattr(args, "location_fixture", None)
     notes_path = getattr(args, "notes", None)
     calendar_runner = _build_json_runner(calendar_fixture)
     gmail_runner = _build_json_runner(gmail_fixture)
@@ -152,6 +164,10 @@ def _build_event_trigger_items(profile_id: str, args: argparse.Namespace) -> lis
         connectors["gmail"] = BoundConnector(lambda: GmailConnector(runner=gmail_runner).collect())
     if notes_path is not None:
         connectors["notes"] = BoundConnector(lambda: NotesConnector().collect(notes_path))
+    if location_fixture is not None:
+        connectors["location_context"] = BoundConnector(
+            lambda: LocationContextConnector(runner=lambda: load_location_context_fixture(location_fixture)).collect()
+        )
     return collect_for_trigger(trigger, profile, connectors)
 
 

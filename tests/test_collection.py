@@ -229,3 +229,29 @@ def test_feed_update_invokes_feed_and_known_source_search_only() -> None:
     assert feed.calls == 1
     assert known_source_search.calls == 1
     assert gmail.calls == 0
+
+
+def test_location_arrival_invokes_location_connector_only() -> None:
+    profile = get_trigger_profile("location.arrival.default")
+    trigger = TriggerEvent(
+        id="trigger-7",
+        type=profile.event_type,
+        profile_id=profile.id,
+        occurred_at="2026-04-21T18:05:00Z",
+        scope=TriggerScope(),
+    )
+    location_context = StubConnector("location_context")
+    gmail = StubConnector("gmail")
+
+    collected = collect_for_trigger(
+        trigger,
+        profile,
+        {
+            location_context.id: location_context,
+            gmail.id: gmail,
+        },
+    )
+
+    assert collected == ["location_context"]
+    assert location_context.calls == 1
+    assert gmail.calls == 0

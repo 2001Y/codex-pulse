@@ -1,0 +1,9 @@
+{
+  "place": "Shibuya Station",
+  "arrived_at": "2026-04-21T18:05:00Z",
+  "context": [
+    "Pick up package",
+    "Check dinner options nearby"
+  ],
+  "maps_url": "https://maps.google.com/?q=Shibuya+Station"
+}

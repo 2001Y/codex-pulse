@@ -121,6 +121,23 @@ def render_feed_update_nudge(items: Iterable[CollectedItem]) -> str | None:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def render_location_arrival_mini_digest(items: Iterable[CollectedItem]) -> str | None:
+    item = next((value for value in items if value.source == "location_context"), None)
+    if item is None:
+        return None
+    context = item.metadata.get("context") or []
+    lines = [
+        "# Arrival context",
+        "",
+        f"- Place: {item.title or item.id}",
+    ]
+    for value in context:
+        lines.append(f"- {value}")
+    if item.url:
+        lines.append(f"- Map: {item.url}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _render_section(
     section_name: str,
     candidates: list[Candidate],
