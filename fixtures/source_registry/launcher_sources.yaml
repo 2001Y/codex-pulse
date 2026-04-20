@@ -1,0 +1,61 @@
+sources:
+- id: apple-newsroom
+  source_family: official_newsroom
+  domain: apple.com
+  title: Apple Newsroom
+  acquisition_mode: rss_poll
+  authority_tier: primary
+  rss_url: https://www.apple.com/newsroom/rss-feed.rss
+  search_hints:
+  - site:apple.com/newsroom Apple press release
+  topical_scopes:
+  - apple
+  - devices
+  - services
+  language: en
+  requires_primary_confirmation: false
+- id: apple-developer-news
+  source_family: official_developer_news
+  domain: developer.apple.com
+  title: Apple Developer News
+  acquisition_mode: rss_poll
+  authority_tier: primary
+  rss_url: https://developer.apple.com/news/rss/news.rss
+  search_hints:
+  - site:developer.apple.com/news Apple developer news
+  topical_scopes:
+  - apple
+  - developer
+  - frameworks
+  language: en
+  requires_primary_confirmation: false
+- id: anthropic-newsroom
+  source_family: official_lab_news
+  domain: anthropic.com
+  title: Anthropic Newsroom
+  acquisition_mode: known_source_search
+  authority_tier: primary
+  search_hints:
+  - site:anthropic.com/news Anthropic announcement
+  topical_scopes:
+  - ai
+  - llm
+  - safety
+  - agents
+  language: en
+  requires_primary_confirmation: false
+- id: xai-news
+  source_family: official_lab_news
+  domain: x.ai
+  title: xAI News
+  acquisition_mode: known_source_search
+  authority_tier: primary
+  search_hints:
+  - site:x.ai/news xAI announcement
+  topical_scopes:
+  - ai
+  - llm
+  - grok
+  - speech
+  language: en
+  requires_primary_confirmation: false
