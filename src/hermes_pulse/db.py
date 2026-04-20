@@ -113,3 +113,30 @@ def update_trigger_run_status(path: str | Path, *, run_id: str, status: str) -> 
             (status, run_id),
         )
         connection.commit()
+
+
+def upsert_connector_cursor(
+    path: str | Path,
+    *,
+    connector_id: str,
+    cursor: str | None,
+    last_poll_at: str | None,
+    last_success_at: str | None,
+    last_error: str | None = None,
+) -> None:
+    database_path = Path(path)
+    initialize_database(database_path)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO connector_cursors (connector_id, cursor, last_poll_at, last_success_at, last_error)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(connector_id) DO UPDATE SET
+                cursor = COALESCE(excluded.cursor, connector_cursors.cursor),
+                last_poll_at = excluded.last_poll_at,
+                last_success_at = excluded.last_success_at,
+                last_error = excluded.last_error
+            """,
+            (connector_id, cursor, last_poll_at, last_success_at, last_error),
+        )
+        connection.commit()

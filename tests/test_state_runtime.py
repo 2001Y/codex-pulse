@@ -2,7 +2,10 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 import hermes_pulse.cli
+from hermes_pulse.models import Provenance
 from hermes_pulse.summarization.base import SummaryArtifact
 
 
@@ -11,6 +14,26 @@ SOURCE_REGISTRY_PATH = ROOT / "fixtures/source_registry/sample_sources.yaml"
 HERMES_HISTORY_PATH = ROOT / "fixtures/hermes_history/sample_session.json"
 NOTES_PATH = ROOT / "fixtures/notes/sample_notes.md"
 CALENDAR_FIXTURE = ROOT / "fixtures/google_workspace/calendar_leave_now_events.json"
+
+
+@pytest.fixture(autouse=True)
+def _stub_network_connectors(monkeypatch):
+    class EmptyFeedRegistryConnector:
+        def __init__(self, fetcher=None) -> None:
+            self.fetcher = fetcher
+
+        def collect(self, entries):
+            return []
+
+    class EmptyKnownSourceSearchConnector:
+        def __init__(self, fetcher=None) -> None:
+            self.fetcher = fetcher
+
+        def collect(self, entries):
+            return []
+
+    monkeypatch.setattr(hermes_pulse.cli, "FeedRegistryConnector", EmptyFeedRegistryConnector)
+    monkeypatch.setattr(hermes_pulse.cli, "KnownSourceSearchConnector", EmptyKnownSourceSearchConnector)
 
 
 def _install_stub_codex_summarizer(monkeypatch, template: str | None = None) -> list[dict[str, object]]:
@@ -307,3 +330,246 @@ def test_completed_status_write_failure_downgrades_to_delivery_state_error(monke
         ).fetchall()
 
     assert trigger_runs == [("delivery_state_error",)]
+
+
+def test_morning_digest_records_x_signal_connector_cursors(monkeypatch, tmp_path: Path) -> None:
+    _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
+    database_path = tmp_path / "state" / "codex-pulse.db"
+
+    class FakeXConnector:
+        def collect(self, signal_types: list[str]):
+            assert signal_types == ["bookmarks", "likes"]
+            return [
+                hermes_pulse.cli.CollectedItem(
+                    id="x-bookmarks:tweet-150",
+                    source="x_bookmarks",
+                    source_kind="post",
+                    title="Older saved thread",
+                    provenance=Provenance(
+                        provider="x.com",
+                        acquisition_mode="official_api",
+                        authority_tier="primary",
+                        primary_source_url="https://x.com/example/status/150",
+                        raw_record_id="150",
+                    ),
+                ),
+                hermes_pulse.cli.CollectedItem(
+                    id="x-bookmarks:tweet-200",
+                    source="x_bookmarks",
+                    source_kind="post",
+                    title="Saved launch thread",
+                    provenance=Provenance(
+                        provider="x.com",
+                        acquisition_mode="official_api",
+                        authority_tier="primary",
+                        primary_source_url="https://x.com/example/status/200",
+                        raw_record_id="200",
+                    ),
+                ),
+                hermes_pulse.cli.CollectedItem(
+                    id="x-likes:tweet-90",
+                    source="x_likes",
+                    source_kind="post",
+                    title="Liked post",
+                    provenance=Provenance(
+                        provider="x.com",
+                        acquisition_mode="official_api",
+                        authority_tier="primary",
+                        primary_source_url="https://x.com/example/status/90",
+                        raw_record_id="90",
+                    ),
+                ),
+            ]
+
+    monkeypatch.setattr(hermes_pulse.cli, "XUrlConnector", FakeXConnector)
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--x-signals",
+                "bookmarks,likes",
+                "--state-db",
+                str(database_path),
+                "--now",
+                "2026-04-20T08:00:00Z",
+            ]
+        )
+        == 0
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        cursors = connection.execute(
+            "SELECT connector_id, cursor, last_poll_at, last_success_at FROM connector_cursors ORDER BY connector_id"
+        ).fetchall()
+
+    assert cursors == [
+        ("x_bookmarks", "200", "2026-04-20T08:00:00Z", "2026-04-20T08:00:00Z"),
+        ("x_likes", "90", "2026-04-20T08:00:00Z", "2026-04-20T08:00:00Z"),
+    ]
+
+
+def test_morning_digest_records_empty_x_signal_poll_as_successful_cursor_refresh(monkeypatch, tmp_path: Path) -> None:
+    _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
+    database_path = tmp_path / "state" / "codex-pulse.db"
+
+    class EmptyXConnector:
+        def collect(self, signal_types: list[str]):
+            assert signal_types == ["bookmarks", "likes"]
+            return []
+
+    monkeypatch.setattr(hermes_pulse.cli, "XUrlConnector", EmptyXConnector)
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--x-signals",
+                "bookmarks,likes",
+                "--state-db",
+                str(database_path),
+                "--now",
+                "2026-04-20T09:00:00Z",
+            ]
+        )
+        == 0
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        cursors = connection.execute(
+            "SELECT connector_id, cursor, last_poll_at, last_success_at FROM connector_cursors ORDER BY connector_id"
+        ).fetchall()
+
+    assert cursors == [
+        ("x_bookmarks", None, "2026-04-20T09:00:00Z", "2026-04-20T09:00:00Z"),
+        ("x_likes", None, "2026-04-20T09:00:00Z", "2026-04-20T09:00:00Z"),
+    ]
+
+
+def test_empty_x_signal_poll_preserves_existing_cursor(monkeypatch, tmp_path: Path) -> None:
+    _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
+    database_path = tmp_path / "state" / "codex-pulse.db"
+
+    class BookmarkXConnector:
+        def collect(self, signal_types: list[str]):
+            return [
+                hermes_pulse.cli.CollectedItem(
+                    id="x-bookmarks:tweet-200",
+                    source="x_bookmarks",
+                    source_kind="post",
+                    title="Saved launch thread",
+                    provenance=Provenance(
+                        provider="x.com",
+                        acquisition_mode="official_api",
+                        authority_tier="primary",
+                        primary_source_url="https://x.com/example/status/200",
+                        raw_record_id="200",
+                    ),
+                )
+            ]
+
+    monkeypatch.setattr(hermes_pulse.cli, "XUrlConnector", BookmarkXConnector)
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--x-signals",
+                "bookmarks",
+                "--state-db",
+                str(database_path),
+                "--now",
+                "2026-04-20T09:05:00Z",
+            ]
+        )
+        == 0
+    )
+
+    class EmptyBookmarkXConnector:
+        def collect(self, signal_types: list[str]):
+            return []
+
+    monkeypatch.setattr(hermes_pulse.cli, "XUrlConnector", EmptyBookmarkXConnector)
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--x-signals",
+                "bookmarks",
+                "--state-db",
+                str(database_path),
+                "--now",
+                "2026-04-20T09:10:00Z",
+            ]
+        )
+        == 0
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        cursor = connection.execute(
+            "SELECT connector_id, cursor, last_poll_at, last_success_at FROM connector_cursors WHERE connector_id = 'x_bookmarks'"
+        ).fetchone()
+
+    assert cursor == ("x_bookmarks", "200", "2026-04-20T09:10:00Z", "2026-04-20T09:10:00Z")
+
+
+def test_failed_digest_does_not_advance_x_signal_cursor(monkeypatch, tmp_path: Path) -> None:
+    database_path = tmp_path / "state" / "codex-pulse.db"
+
+    class FakeXConnector:
+        def collect(self, signal_types: list[str]):
+            return [
+                hermes_pulse.cli.CollectedItem(
+                    id="x-bookmarks:tweet-200",
+                    source="x_bookmarks",
+                    source_kind="post",
+                    title="Saved launch thread",
+                    provenance=Provenance(
+                        provider="x.com",
+                        acquisition_mode="official_api",
+                        authority_tier="primary",
+                        primary_source_url="https://x.com/example/status/200",
+                        raw_record_id="200",
+                    ),
+                )
+            ]
+
+    class ExplodingSummarizer:
+        def summarize_archive(self, archive_directory: str | Path):
+            raise RuntimeError("codex unavailable")
+
+    monkeypatch.setattr(hermes_pulse.cli, "XUrlConnector", FakeXConnector)
+    monkeypatch.setattr(hermes_pulse.cli, "CodexCliSummarizer", lambda: ExplodingSummarizer())
+
+    try:
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--x-signals",
+                "bookmarks",
+                "--state-db",
+                str(database_path),
+                "--now",
+                "2026-04-20T09:15:00Z",
+            ]
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "codex unavailable"
+    else:
+        raise AssertionError("summarization failure should propagate")
+
+    with sqlite3.connect(database_path) as connection:
+        cursors = connection.execute(
+            "SELECT connector_id, cursor, last_poll_at, last_success_at FROM connector_cursors"
+        ).fetchall()
+
+    assert cursors == []

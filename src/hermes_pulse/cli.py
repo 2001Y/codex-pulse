@@ -15,7 +15,12 @@ from hermes_pulse.connectors.known_source_search import KnownSourceSearchConnect
 from hermes_pulse.connectors.location_context import LocationContextConnector, load_location_context_fixture
 from hermes_pulse.connectors.notes import NotesConnector
 from hermes_pulse.connectors.x_url import XUrlConnector
-from hermes_pulse.db import record_delivery, record_trigger_run, update_trigger_run_status
+from hermes_pulse.db import (
+    record_delivery,
+    record_trigger_run,
+    update_trigger_run_status,
+    upsert_connector_cursor,
+)
 from hermes_pulse.delivery.local_markdown import LocalMarkdownDelivery
 from hermes_pulse.models import CollectedItem, TriggerEvent, TriggerScope
 from hermes_pulse.rendering import (
@@ -102,11 +107,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     delivery_succeeded = False
+    pending_connector_cursor_update: tuple[list[CollectedItem], list[str], str] | None = None
     try:
         markdown: str | None = None
 
         if args.command in {"morning-digest", "evening-digest"}:
             items = _build_digest(args.command, args)
+            if args.state_db is not None:
+                pending_connector_cursor_update = (
+                    items,
+                    _parse_x_signal_types(getattr(args, "x_signals", None)),
+                    _occurred_at_for_command(args.command, args),
+                )
             archive_root = args.archive_root or Path.home() / "Pulse"
             archive_directory = write_morning_digest_archive(
                 items=items,
@@ -140,6 +152,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             delivery_succeeded = True
             if args.state_db is not None and run_id is not None:
                 record_delivery(args.state_db, run_id=run_id, destination=str(delivered_path), status="success")
+
+        if args.state_db is not None and pending_connector_cursor_update is not None:
+            items, x_signal_types, occurred_at = pending_connector_cursor_update
+            _record_connector_cursors_from_items(
+                args.state_db,
+                items=items,
+                occurred_at=occurred_at,
+                x_signal_types=x_signal_types,
+            )
     except Exception:
         if args.state_db is not None and run_id is not None:
             try:
@@ -191,6 +212,56 @@ def _occurred_at_for_command(command: str | None, args: argparse.Namespace) -> s
     if args.now:
         return args.now
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _parse_x_signal_types(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [signal_type.strip() for signal_type in value.split(",") if signal_type.strip()]
+
+
+def _x_source_for_signal_type(signal_type: str) -> str:
+    return {
+        "bookmarks": "x_bookmarks",
+        "likes": "x_likes",
+        "home_timeline_reverse_chronological": "x_home_timeline_reverse_chronological",
+    }[signal_type]
+
+
+def _cursor_sort_key(raw_record_id: str) -> tuple[int, int | str]:
+    if raw_record_id.isdigit():
+        return (1, int(raw_record_id))
+    return (0, raw_record_id)
+
+
+def _record_connector_cursors_from_items(
+    path: Path,
+    *,
+    items: list[CollectedItem],
+    occurred_at: str,
+    x_signal_types: list[str],
+) -> None:
+    top_cursors: dict[str, str | None] = {
+        _x_source_for_signal_type(signal_type): None for signal_type in x_signal_types
+    }
+    for item in items:
+        if item.source not in top_cursors:
+            continue
+        raw_record_id = item.provenance.raw_record_id if item.provenance is not None else None
+        if raw_record_id is None:
+            continue
+        current_cursor = top_cursors[item.source]
+        if current_cursor is None or _cursor_sort_key(raw_record_id) > _cursor_sort_key(current_cursor):
+            top_cursors[item.source] = raw_record_id
+
+    for connector_id, cursor in top_cursors.items():
+        upsert_connector_cursor(
+            path,
+            connector_id=connector_id,
+            cursor=cursor,
+            last_poll_at=occurred_at,
+            last_success_at=occurred_at,
+        )
 
 
 def _build_leave_now_warning(args: argparse.Namespace) -> str | None:

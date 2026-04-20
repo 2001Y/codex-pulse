@@ -3,6 +3,8 @@ import tomllib
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 import hermes_pulse.cli
 from hermes_pulse.models import CitationLink, CollectedItem, ItemTimestamps, Provenance
 from hermes_pulse.summarization.base import SummaryArtifact
@@ -12,6 +14,26 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_REGISTRY_PATH = ROOT / "fixtures/source_registry/sample_sources.yaml"
 HERMES_HISTORY_PATH = ROOT / "fixtures/hermes_history/sample_session.json"
 NOTES_PATH = ROOT / "fixtures/notes/sample_notes.md"
+
+
+@pytest.fixture(autouse=True)
+def _stub_default_network_connectors(monkeypatch):
+    class EmptyFeedRegistryConnector:
+        def __init__(self, fetcher=None) -> None:
+            self.fetcher = fetcher
+
+        def collect(self, entries):
+            return []
+
+    class EmptyKnownSourceSearchConnector:
+        def __init__(self, fetcher=None) -> None:
+            self.fetcher = fetcher
+
+        def collect(self, entries):
+            return []
+
+    monkeypatch.setattr(hermes_pulse.cli, "FeedRegistryConnector", EmptyFeedRegistryConnector)
+    monkeypatch.setattr(hermes_pulse.cli, "KnownSourceSearchConnector", EmptyKnownSourceSearchConnector)
 
 
 def _install_stub_codex_summarizer(monkeypatch, template: str | None = None) -> list[dict[str, object]]:
@@ -117,7 +139,15 @@ def test_morning_digest_uses_live_feed_fetching_when_no_fixture_is_provided(
                 )
             ]
 
+    class EmptyKnownSourceSearchConnector:
+        def __init__(self, fetcher=None) -> None:
+            self.fetcher = fetcher
+
+        def collect(self, entries):
+            return []
+
     monkeypatch.setattr(hermes_pulse.cli, "FeedRegistryConnector", FakeFeedRegistryConnector)
+    monkeypatch.setattr(hermes_pulse.cli, "KnownSourceSearchConnector", EmptyKnownSourceSearchConnector)
     output_path = tmp_path / "deliveries" / "morning-digest.md"
 
     assert (
@@ -191,7 +221,15 @@ def test_morning_digest_skips_optional_local_context_when_paths_are_omitted(
         def collect(self, path):
             raise AssertionError("notes connector should not be used")
 
+    class EmptyKnownSourceSearchConnector:
+        def __init__(self, fetcher=None) -> None:
+            self.fetcher = fetcher
+
+        def collect(self, entries):
+            return []
+
     monkeypatch.setattr(hermes_pulse.cli, "FeedRegistryConnector", FakeFeedRegistryConnector)
+    monkeypatch.setattr(hermes_pulse.cli, "KnownSourceSearchConnector", EmptyKnownSourceSearchConnector)
     monkeypatch.setattr(hermes_pulse.cli, "HermesHistoryConnector", UnexpectedHermesHistoryConnector)
     monkeypatch.setattr(hermes_pulse.cli, "NotesConnector", UnexpectedNotesConnector)
     output_path = tmp_path / "deliveries" / "morning-digest.md"
