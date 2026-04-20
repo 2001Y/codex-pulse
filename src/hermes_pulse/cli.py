@@ -31,7 +31,7 @@ class BoundConnector:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="codex-pulse")
-    parser.add_argument("command", nargs="?", choices=("morning-digest",))
+    parser.add_argument("command", nargs="?", choices=("morning-digest", "evening-digest"))
     parser.add_argument("--source-registry", type=Path)
     parser.add_argument("--feed-fixture", type=Path)
     parser.add_argument("--search-fixture", type=Path)
@@ -47,8 +47,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(list(argv) if argv is not None else None)
     markdown: str | None = None
 
-    if args.command == "morning-digest":
-        items = _build_morning_digest(args)
+    if args.command in {"morning-digest", "evening-digest"}:
+        items = _build_digest(args.command, args)
         archive_root = args.archive_root or Path.home() / "Pulse"
         archive_directory = write_morning_digest_archive(
             items=items,
@@ -66,7 +66,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _build_morning_digest(args: argparse.Namespace) -> list[CollectedItem]:
-    profile = get_trigger_profile("digest.morning.default")
+    return _build_digest("morning-digest", args)
+
+
+def _build_digest(command: str, args: argparse.Namespace) -> list[CollectedItem]:
+    profile_id = {
+        "morning-digest": "digest.morning.default",
+        "evening-digest": "digest.evening.default",
+    }[command]
+    profile = get_trigger_profile(profile_id)
     source_registry = load_source_registry(args.source_registry or DEFAULT_SOURCE_REGISTRY)
     feed_fetcher = _build_feed_fetcher(args.feed_fixture)
     search_fetcher = _build_feed_fetcher(args.search_fixture)

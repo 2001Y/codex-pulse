@@ -44,6 +44,31 @@ def test_main_entrypoint_exists_and_exits_successfully() -> None:
     assert hermes_pulse.cli.main([]) == 0
 
 
+def test_main_supports_evening_digest_command(monkeypatch, tmp_path: Path) -> None:
+    codex_calls = _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Evening summary\n")
+    output_path = tmp_path / "deliveries" / "evening-digest.md"
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "evening-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--hermes-history",
+                str(HERMES_HISTORY_PATH),
+                "--notes",
+                str(NOTES_PATH),
+                "--output",
+                str(output_path),
+            ]
+        )
+        == 0
+    )
+
+    assert output_path.read_text() == "# Codex Digest\n\n- Evening summary\n"
+    assert codex_calls[0]["archive_directory"].exists()
+
+
 def test_main_with_output_only_does_not_write_fallback_digest(tmp_path: Path) -> None:
     output_path = tmp_path / "deliveries" / "morning-digest.md"
 

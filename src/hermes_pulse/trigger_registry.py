@@ -11,7 +11,17 @@ TRIGGER_REGISTRY = {
         action_ceiling=1,
         cooldown_minutes=360,
         quotas={"feed_items": 3, "resurface_items": 3, "people_bundles": 2},
-    )
+    ),
+    "digest.evening.default": TriggerProfile(
+        id="digest.evening.default",
+        family="scheduled",
+        event_type="digest.evening",
+        collection_preset="broad_day_end",
+        output_mode="digest",
+        action_ceiling=1,
+        cooldown_minutes=360,
+        quotas={"feed_items": 3, "resurface_items": 3, "people_bundles": 2},
+    ),
 }
 
 
