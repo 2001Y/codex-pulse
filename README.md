@@ -57,7 +57,7 @@ Source families:
 - Maps / saved places / location history
 - Hermes Agent conversation history
 - ChatGPT / Grok history where available through local, export, share, or manual paths
-- X home timeline diff / bookmarks / likes
+- X bookmarks / likes (home timeline diff is out of scope until a stable official path is verified)
 - RSS / Atom feeds from official blogs, press rooms, changelogs, research labs, domain media, and specialist third-party blogs
 - Known-source registries used as a more reliable retrieval substrate than open web search when possible
 
@@ -89,7 +89,8 @@ Priority should generally remain:
 - then external deltas and passive signals
 
 Within X itself:
-- `bookmark > like > home timeline diff`
+- `bookmark > like`
+- `home timeline diff` is out of scope in v1 until a stable official acquisition path is verified
 
 ### 4. Deliver
 Deliver the result or prepare the next action through the chosen runtime/channel.

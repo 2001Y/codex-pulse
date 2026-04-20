@@ -48,13 +48,14 @@ Success criteria:
 Build:
 - X bookmarks
 - X likes
-- X home timeline diff state model
 - X-specific ranking quota rules
+- delivered-ID / suppression state for supported X signals
 
 Success criteria:
 - X adds value without dominating output
-- dedupe across home/bookmark/like works
+- dedupe across bookmark/like works
 - delivered IDs and suppression behave correctly
+- the project does not claim home timeline support before a stable official path exists
 
 ### Phase 4 — cross-agent memory imports
 Build:

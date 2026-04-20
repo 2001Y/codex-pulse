@@ -90,21 +90,74 @@ This is mandatory for:
 
 ## Connector readiness matrix
 
-| Source | v1 target mode | Why |
-|---|---|---|
-| Hermes Agent history | `local_store` | strongest control and easiest sync |
-| Calendar | `official_api` or local export | essential future context |
-| Gmail / email | `official_api` / webhook / polling | key operational trigger source |
-| Notes / docs | local file / API | open-loop and memory context |
-| ChatGPT history | `official_export`, `manual_import`, maybe `share_link_import` | consumer UI history is not a clean app API |
-| Grok history | `manual_import`, `share_link_import`, maybe export later | same constraint class as ChatGPT |
-| X home timeline | official API if available; otherwise constrained fallback | high-value but noisy delta source |
-| X bookmarks | official API | stronger explicit intent than likes/home |
-| X likes | official API | weaker but still useful memory signal |
-| RSS / Atom source registries | `rss_poll` / `atom_poll` | reliable first-line monitoring for official and specialist sources |
-| Known-source domain registries | `known_source_search` | more reliable retrieval substrate than generic search when curated well |
-| Maps saved places | export/API later | valuable for place-aware triggers |
-| Location history (e.g. Dawarich) | local/API | strong proactive trigger substrate |
+SSOT rules are strict:
+- every source family must have one canonical acquisition path for v1
+- if the path is not acquisition-stable enough, mark it out of scope
+- do not describe speculative fallback branches as if they were part of the product
+
+| Source | v1 canonical acquisition mode | Concrete path | Status |
+|---|---|---|---|
+| Hermes Agent history | `local_store` | local session/archive files under the user-controlled Hermes data directory | implemented |
+| Calendar | `official_api` | Google Calendar via OAuth-backed Google Workspace API tooling | planned |
+| Gmail | `official_api` | Gmail via OAuth-backed Google Workspace API tooling | planned |
+| Generic email (non-Gmail) | out of scope | do not mix IMAP variants into v1 until a separate canonical path is defined | out of scope |
+| Notes / docs | `local_store` | local markdown/text/doc artifacts explicitly pointed at by the user or configured paths | implemented minimally |
+| ChatGPT history | `official_export` | official OpenAI export zip or other raw user-owned export artifact | planned |
+| Grok history | `manual_import` | raw user-owned artifacts only until an official export path exists | planned |
+| X bookmarks | `official_api` | X API via `x-cli` with user credentials and sufficient paid tier | planned |
+| X likes | `official_api` | X API via `x-cli` with user credentials and sufficient paid tier | planned |
+| X home timeline diff | out of scope | no v1 implementation until an authoritative, stable, automation-safe official path is verified | out of scope |
+| RSS / Atom source registries | `rss_poll` / `atom_poll` | curated source registry with raw feed artifact retention | implemented |
+| Known-source domain registries | `known_source_search` | domain-constrained retrieval from registered trusted sources | implemented |
+| Maps saved places | out of scope | do not claim support before a stable export or official API path is chosen | out of scope |
+| Location history | `local_store` | local Dawarich database/API or other user-controlled location store | planned |
+
+## Source-family decisions for v1
+
+### Calendar
+- Canonical path: `official_api`
+- Concrete choice: Google Calendar only in v1
+- Why: this is an operational source where current state matters and Google exposes a stable official API
+- Consequence: if the user wants Apple Calendar or another provider, that is a separate connector family and is out of scope until specified
+
+### Gmail
+- Canonical path: `official_api`
+- Concrete choice: Gmail only in v1
+- Why: operational mail needs live read access and reliable incremental queries; Gmail API is the cleanest source of truth here
+- Consequence: generic IMAP is not silently treated as equivalent in v1
+
+### X
+- Canonical path for supported signals: `official_api`
+- Concrete choice in v1:
+  - support `bookmarks`
+  - support `likes`
+  - do **not** support `home timeline diff`
+- Why:
+  - bookmarks and likes are explicit user signals and map naturally to authenticated API surfaces
+  - home timeline is high-noise and the official/stable acquisition surface is not yet fixed enough for SSOT-grade implementation in this project
+- Operational requirement:
+  - `x-cli`
+  - `X_API_KEY`
+  - `X_API_SECRET`
+  - `X_BEARER_TOKEN`
+  - `X_ACCESS_TOKEN`
+  - `X_ACCESS_TOKEN_SECRET`
+  - paid X tier if the endpoint requires it
+
+### ChatGPT
+- Canonical path: `official_export`
+- Concrete choice: user-triggered export artifact import
+- Why: consumer UI live history is not an official operational API surface
+
+### Grok
+- Canonical path: `manual_import`
+- Concrete choice: user-owned raw artifacts only in v1
+- Why: until an official export path exists, internal web endpoints should not be treated as canonical SSOT-grade collection
+
+### Location
+- Canonical path: `local_store`
+- Concrete choice: Dawarich or another local user-controlled location database
+- Why: it preserves raw movement history under user control and avoids over-coupling the runtime to opaque vendor APIs
 
 ## RSS / feed registries
 
