@@ -16,8 +16,8 @@ Optionally keep raw imported artifacts on disk with references in SQLite.
 
 Current runtime status:
 - minimal schema exists in `src/hermes_pulse/db.py`
-- `codex-pulse --state-db /path/to/db.sqlite3 ...` now records trigger runs, local deliveries, X-signal connector cursors, and source-registry poll state snapshots (`last_poll_at`, `last_seen_item_ids`, `last_promoted_item_ids`, `authority_tier`)
-- suppression history, approval history, and feedback logs are still planned but not yet wired into runtime behavior; trust-review notes and source error metadata updates also remain future work
+- `codex-pulse --state-db /path/to/db.sqlite3 ...` now records trigger runs, local deliveries, delivered-item suppression history, X-signal connector cursors, and source-registry poll state snapshots (`last_poll_at`, `last_seen_item_ids`, `last_promoted_item_ids`, `authority_tier`)
+- approval history and feedback logs are still planned but not yet wired into runtime behavior; trust-review notes and source error metadata updates also remain future work
 
 ## Required state families
 

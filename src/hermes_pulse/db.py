@@ -44,6 +44,18 @@ SCHEMA_STATEMENTS = (
         status TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS suppression_history (
+        suppression_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        trigger_family TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        cooldown_expires_at TEXT,
+        dismissal_status TEXT NOT NULL,
+        superseded_by_higher_authority INTEGER NOT NULL
+    )
+    """,
 )
 
 
@@ -176,3 +188,47 @@ def upsert_source_registry_state(
             (registry_id, last_poll_at, last_seen_item_ids, last_promoted_item_ids, authority_tier, notes),
         )
         connection.commit()
+
+
+def record_suppression(
+    path: str | Path,
+    *,
+    run_id: str,
+    subject: str,
+    trigger_family: str,
+    reason: str,
+    cooldown_expires_at: str | None,
+    dismissal_status: str,
+    superseded_by_higher_authority: bool,
+) -> str:
+    database_path = Path(path)
+    initialize_database(database_path)
+    suppression_id = uuid4().hex
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO suppression_history (
+                suppression_id,
+                run_id,
+                subject,
+                trigger_family,
+                reason,
+                cooldown_expires_at,
+                dismissal_status,
+                superseded_by_higher_authority
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                suppression_id,
+                run_id,
+                subject,
+                trigger_family,
+                reason,
+                cooldown_expires_at,
+                dismissal_status,
+                1 if superseded_by_higher_authority else 0,
+            ),
+        )
+        connection.commit()
+    return suppression_id

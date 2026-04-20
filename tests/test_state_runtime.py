@@ -82,6 +82,8 @@ def test_morning_digest_records_trigger_run_and_delivery_in_state_db(monkeypatch
                 str(database_path),
                 "--output",
                 str(output_path),
+                "--now",
+                "2026-04-20T07:30:00Z",
             ]
         )
         == 0
@@ -94,9 +96,16 @@ def test_morning_digest_records_trigger_run_and_delivery_in_state_db(monkeypatch
         deliveries = connection.execute(
             "SELECT destination, status FROM deliveries"
         ).fetchall()
+        suppression_history = connection.execute(
+            "SELECT trigger_family, reason, cooldown_expires_at, dismissal_status, superseded_by_higher_authority FROM suppression_history ORDER BY subject"
+        ).fetchall()
 
     assert trigger_runs == [("digest.morning", "digest.morning.default", "digest", "completed")]
     assert deliveries == [(str(output_path), "success")]
+    assert suppression_history == [
+        ("digest.morning", "already_delivered_in_same_trigger_family", "2026-04-21T07:30:00Z", "active", 0),
+        ("digest.morning", "already_delivered_in_same_trigger_family", "2026-04-21T07:30:00Z", "active", 0),
+    ]
 
 
 def test_morning_digest_records_source_registry_state(monkeypatch, tmp_path: Path) -> None:

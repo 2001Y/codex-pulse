@@ -9,6 +9,7 @@ EXPECTED_TABLES = {
     "connector_cursors",
     "source_registry_state",
     "deliveries",
+    "suppression_history",
 }
 
 

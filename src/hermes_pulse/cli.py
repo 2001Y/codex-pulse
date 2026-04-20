@@ -17,6 +17,7 @@ from hermes_pulse.connectors.notes import NotesConnector
 from hermes_pulse.connectors.x_url import XUrlConnector
 from hermes_pulse.db import (
     record_delivery,
+    record_suppression,
     record_trigger_run,
     update_trigger_run_status,
     upsert_connector_cursor,
@@ -110,6 +111,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     delivery_succeeded = False
     pending_connector_cursor_update: tuple[list[CollectedItem], list[str], str] | None = None
     pending_source_registry_state_update: tuple[list[SourceRegistryEntry], list[CollectedItem], str] | None = None
+    pending_suppression_update: tuple[list[CollectedItem], str, str, str] | None = None
     try:
         markdown: str | None = None
 
@@ -127,6 +129,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     items,
                     occurred_at,
                 )
+                if run_id is not None:
+                    pending_suppression_update = (items, profile.event_type, occurred_at, run_id)
             archive_root = args.archive_root or Path.home() / "Pulse"
             archive_directory = write_morning_digest_archive(
                 items=items,
@@ -160,6 +164,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             delivery_succeeded = True
             if args.state_db is not None and run_id is not None:
                 record_delivery(args.state_db, run_id=run_id, destination=str(delivered_path), status="success")
+                if pending_suppression_update is not None:
+                    items, trigger_family, occurred_at, suppression_run_id = pending_suppression_update
+                    _record_suppression_history(
+                        args.state_db,
+                        items=items,
+                        trigger_family=trigger_family,
+                        occurred_at=occurred_at,
+                        run_id=suppression_run_id,
+                    )
 
         if args.state_db is not None and pending_source_registry_state_update is not None:
             source_registry, items, occurred_at = pending_source_registry_state_update
@@ -298,6 +311,23 @@ def _record_source_registry_state(path: Path, *, source_registry: list[SourceReg
             last_seen_item_ids=json.dumps(item_ids_by_source.get(entry.id, [])),
             last_promoted_item_ids=json.dumps(item_ids_by_source.get(entry.id, [])),
             authority_tier=entry.authority_tier,
+        )
+
+
+def _record_suppression_history(path: Path, *, items: list[CollectedItem], trigger_family: str, occurred_at: str, run_id: str) -> None:
+    cooldown_expires_at = (
+        _parse_timestamp(occurred_at) + timedelta(days=1)
+    ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    for item in items:
+        record_suppression(
+            path,
+            run_id=run_id,
+            subject=json.dumps([item.source, item.id]),
+            trigger_family=trigger_family,
+            reason="already_delivered_in_same_trigger_family",
+            cooldown_expires_at=cooldown_expires_at,
+            dismissal_status="active",
+            superseded_by_higher_authority=False,
         )
 
 
