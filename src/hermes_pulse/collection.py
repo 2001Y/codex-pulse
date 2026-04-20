@@ -5,7 +5,7 @@ from hermes_pulse.models import TriggerEvent, TriggerProfile
 
 
 COLLECTION_PRESETS = {
-    "broad_day_start": ["feed_registry", "hermes_history", "notes"],
+    "broad_day_start": ["feed_registry", "known_source_search", "hermes_history", "notes"],
 }
 
 

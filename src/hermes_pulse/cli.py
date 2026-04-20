@@ -7,6 +7,7 @@ from hermes_pulse.archive import write_morning_digest_archive
 from hermes_pulse.collection import collect_for_trigger
 from hermes_pulse.connectors.feed_registry import FeedRegistryConnector
 from hermes_pulse.connectors.hermes_history import HermesHistoryConnector
+from hermes_pulse.connectors.known_source_search import KnownSourceSearchConnector
 from hermes_pulse.connectors.notes import NotesConnector
 from hermes_pulse.delivery.local_markdown import LocalMarkdownDelivery
 from hermes_pulse.models import CollectedItem, TriggerEvent, TriggerScope
@@ -33,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("command", nargs="?", choices=("morning-digest",))
     parser.add_argument("--source-registry", type=Path)
     parser.add_argument("--feed-fixture", type=Path)
+    parser.add_argument("--search-fixture", type=Path)
     parser.add_argument("--hermes-history", type=Path)
     parser.add_argument("--notes", type=Path)
     parser.add_argument("--archive-root", type=Path)
@@ -68,6 +70,7 @@ def _build_morning_digest(args: argparse.Namespace) -> tuple[str, list[Collected
     profile = get_trigger_profile("digest.morning.default")
     source_registry = load_source_registry(args.source_registry or DEFAULT_SOURCE_REGISTRY)
     feed_fetcher = _build_feed_fetcher(args.feed_fixture)
+    search_fetcher = _build_feed_fetcher(args.search_fixture)
     occurred_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     trigger = TriggerEvent(
         id="scheduled:digest.morning.default",
@@ -79,6 +82,9 @@ def _build_morning_digest(args: argparse.Namespace) -> tuple[str, list[Collected
     connectors = {
         "feed_registry": BoundConnector(
             lambda: FeedRegistryConnector(fetcher=feed_fetcher).collect(source_registry)
+        ),
+        "known_source_search": BoundConnector(
+            lambda: KnownSourceSearchConnector(fetcher=search_fetcher).collect(source_registry)
         ),
     }
     if args.hermes_history is not None:

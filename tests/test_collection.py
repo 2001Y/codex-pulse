@@ -23,6 +23,7 @@ def test_broad_day_start_invokes_expected_connectors_only() -> None:
         scope=TriggerScope(),
     )
     feed = StubConnector("feed_registry")
+    known_source_search = StubConnector("known_source_search")
     hermes_history = StubConnector("hermes_history")
     notes = StubConnector("notes")
     unrelated = StubConnector("unrelated")
@@ -32,14 +33,16 @@ def test_broad_day_start_invokes_expected_connectors_only() -> None:
         profile,
         {
             feed.id: feed,
+            known_source_search.id: known_source_search,
             hermes_history.id: hermes_history,
             notes.id: notes,
             unrelated.id: unrelated,
         },
     )
 
-    assert collected == ["feed_registry", "hermes_history", "notes"]
+    assert collected == ["feed_registry", "known_source_search", "hermes_history", "notes"]
     assert feed.calls == 1
+    assert known_source_search.calls == 1
     assert hermes_history.calls == 1
     assert notes.calls == 1
     assert unrelated.calls == 0
