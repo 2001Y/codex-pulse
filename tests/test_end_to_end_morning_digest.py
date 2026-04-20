@@ -1,3 +1,5 @@
+import json
+from datetime import date
 from pathlib import Path
 
 import hermes_pulse.cli
@@ -102,3 +104,43 @@ def test_end_to_end_scheduled_morning_digest_runs_against_fixtures(tmp_path: Pat
     assert "Notes" in markdown
     assert "https://example.com/posts/launch-update" in markdown
     assert "Citations: primary: [Launch update](https://example.com/posts/launch-update)" in markdown
+
+
+def test_end_to_end_morning_digest_archives_feed_and_local_context_items(tmp_path: Path) -> None:
+    output_path = tmp_path / "deliveries" / "morning-digest.md"
+    archive_root = tmp_path / "pulse-archive"
+    archive_date = date.today().isoformat()
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--feed-fixture",
+                str(FEED_FIXTURE_PATH),
+                "--hermes-history",
+                str(HERMES_HISTORY_PATH),
+                "--notes",
+                str(NOTES_PATH),
+                "--archive-root",
+                str(archive_root),
+                "--output",
+                str(output_path),
+            ]
+        )
+        == 0
+    )
+
+    summary_path = archive_root / archive_date / "summary" / "morning-digest.md"
+    raw_items_path = archive_root / archive_date / "raw" / "collected-items.json"
+    raw_items = json.loads(raw_items_path.read_text())
+
+    assert summary_path.read_text() == output_path.read_text()
+    assert {item["source"] for item in raw_items} == {
+        "official-blog",
+        "trusted-secondary-blog",
+        "hermes_history",
+        "notes",
+    }
+    assert any(item["id"].startswith("official-blog:") for item in raw_items)
