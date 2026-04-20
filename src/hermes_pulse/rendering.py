@@ -1,4 +1,6 @@
 from collections.abc import Iterable
+from html import unescape
+import re
 
 from hermes_pulse.models import Candidate, CitationLink, CollectedItem
 from hermes_pulse.synthesis import bundle_candidates_into_sections
@@ -12,6 +14,14 @@ SECTION_TITLES = {
     "feed_updates": "Feed updates",
 }
 REQUIRED_SECTIONS = ("today", "incoming", "followup", "resurface")
+SECTION_ITEM_LIMITS = {
+    "today": 3,
+    "incoming": 3,
+    "followup": 3,
+    "resurface": 3,
+    "feed_updates": 3,
+}
+HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 def render_morning_digest(
@@ -42,7 +52,7 @@ def _render_section(
         lines.extend(["- None.", ""])
         return lines
 
-    for candidate in candidates:
+    for candidate in candidates[: SECTION_ITEM_LIMITS.get(section_name, 3)]:
         lines.extend(_render_candidate(candidate, items_by_id))
 
     lines.append("")
@@ -55,7 +65,7 @@ def _render_candidate(candidate: Candidate, items_by_id: dict[str, CollectedItem
         return [f"- {candidate.id}"]
 
     lines = [f"- {_render_item_title(item)}"]
-    summary = item.excerpt or _single_line(item.body)
+    summary = _single_line(item.excerpt) or _single_line(item.body)
     if summary:
         lines.append(f"  - {summary}")
 
@@ -96,4 +106,12 @@ def _render_citations(citations: list[CitationLink]) -> str | None:
 def _single_line(text: str | None) -> str | None:
     if not text:
         return None
-    return next((line.strip() for line in text.splitlines() if line.strip()), None)
+
+    plain_text = _strip_html(text)
+    return next((line.strip() for line in plain_text.splitlines() if line.strip()), None)
+
+
+def _strip_html(text: str) -> str:
+    text_without_tags = HTML_TAG_RE.sub(" ", text)
+    plain_text = unescape(text_without_tags)
+    return " ".join(plain_text.split())

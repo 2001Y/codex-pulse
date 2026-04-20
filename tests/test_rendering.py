@@ -14,6 +14,7 @@ def make_item(
     open_loop: bool = False,
     saved: bool = False,
     excerpt: str | None = None,
+    body: str | None = None,
     url: str | None = None,
 ) -> CollectedItem:
     acquisition_mode = "rss_poll" if source_kind == "feed_item" else "local_store"
@@ -28,6 +29,7 @@ def make_item(
         source_kind=source_kind,
         title=title,
         excerpt=excerpt,
+        body=body,
         url=url,
         intent_signals=IntentSignals(saved=saved, unresolved=open_loop),
         provenance=Provenance(
@@ -87,3 +89,57 @@ def test_render_morning_digest_omits_feed_updates_when_no_authoritative_feed_ite
     assert "## Followup" in digest
     assert "## Resurface" in digest
     assert "## Feed updates" not in digest
+
+
+def test_render_morning_digest_caps_each_section_to_three_items() -> None:
+    items = [
+        *(make_item(f"today-{index:02d}", title=f"Today {index:02d}", future_relevance=True) for index in range(1, 5)),
+        *(make_item(f"incoming-{index:02d}", title=f"Incoming {index:02d}") for index in range(1, 5)),
+        *(make_item(f"followup-{index:02d}", title=f"Followup {index:02d}", open_loop=True) for index in range(1, 5)),
+        *(make_item(f"resurface-{index:02d}", title=f"Resurface {index:02d}", saved=True) for index in range(1, 5)),
+        *(
+            make_item(
+                f"feed-{index:02d}",
+                title=f"Feed {index:02d}",
+                source=f"feed-{index:02d}",
+                source_kind="feed_item",
+                authority_tier="primary",
+                excerpt=f"Feed summary {index:02d}",
+                url=f"https://example.com/feed-{index:02d}",
+            )
+            for index in range(1, 5)
+        ),
+    ]
+
+    digest = render_morning_digest(synthesize_candidates(items), items)
+
+    for prefix in ("Today", "Incoming", "Followup", "Resurface", "Feed"):
+        assert f"{prefix} 01" in digest
+        assert f"{prefix} 02" in digest
+        assert f"{prefix} 03" in digest
+        assert f"{prefix} 04" not in digest
+
+
+def test_render_morning_digest_strips_html_from_summaries() -> None:
+    items = [
+        make_item(
+            "today-html",
+            title="Today HTML",
+            future_relevance=True,
+            excerpt="<p>Hello <strong>world</strong> &amp; team</p>",
+        ),
+        make_item(
+            "incoming-html",
+            title="Incoming HTML",
+            body="<div>Body <em>summary</em> line</div>",
+        ),
+    ]
+
+    digest = render_morning_digest(synthesize_candidates(items), items)
+
+    assert "Hello world & team" in digest
+    assert "Body summary line" in digest
+    assert "<p>" not in digest
+    assert "<strong>" not in digest
+    assert "<div>" not in digest
+    assert "<em>" not in digest
