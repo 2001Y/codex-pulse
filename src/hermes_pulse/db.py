@@ -169,7 +169,7 @@ def upsert_source_registry_state(
             ON CONFLICT(registry_id) DO UPDATE SET
                 last_poll_at = excluded.last_poll_at,
                 last_seen_item_ids = excluded.last_seen_item_ids,
-                last_promoted_item_ids = COALESCE(excluded.last_promoted_item_ids, source_registry_state.last_promoted_item_ids),
+                last_promoted_item_ids = excluded.last_promoted_item_ids,
                 authority_tier = excluded.authority_tier,
                 notes = COALESCE(excluded.notes, source_registry_state.notes)
             """,

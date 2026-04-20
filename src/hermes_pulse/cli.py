@@ -296,7 +296,7 @@ def _record_source_registry_state(path: Path, *, source_registry: list[SourceReg
             registry_id=entry.id,
             last_poll_at=occurred_at,
             last_seen_item_ids=json.dumps(item_ids_by_source.get(entry.id, [])),
-            last_promoted_item_ids=None,
+            last_promoted_item_ids=json.dumps(item_ids_by_source.get(entry.id, [])),
             authority_tier=entry.authority_tier,
         )
 

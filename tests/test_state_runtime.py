@@ -178,17 +178,35 @@ def test_morning_digest_records_source_registry_state(monkeypatch, tmp_path: Pat
 
     with sqlite3.connect(database_path) as connection:
         registry_state = connection.execute(
-            "SELECT registry_id, last_poll_at, last_seen_item_ids, authority_tier FROM source_registry_state ORDER BY registry_id"
+            "SELECT registry_id, last_poll_at, last_seen_item_ids, last_promoted_item_ids, authority_tier FROM source_registry_state ORDER BY registry_id"
         ).fetchall()
 
     assert registry_state == [
-        ("discovery-only-source", "2026-04-20T07:30:00Z", '["discovery-only-source:https://discover.example.net/story"]', "discovery_only"),
-        ("official-blog", "2026-04-20T07:30:00Z", '["official-blog:post-2"]', "primary"),
-        ("trusted-secondary-blog", "2026-04-20T07:30:00Z", '["trusted-secondary-blog:entry-9"]', "trusted_secondary"),
+        (
+            "discovery-only-source",
+            "2026-04-20T07:30:00Z",
+            '["discovery-only-source:https://discover.example.net/story"]',
+            '["discovery-only-source:https://discover.example.net/story"]',
+            "discovery_only",
+        ),
+        (
+            "official-blog",
+            "2026-04-20T07:30:00Z",
+            '["official-blog:post-2"]',
+            '["official-blog:post-2"]',
+            "primary",
+        ),
+        (
+            "trusted-secondary-blog",
+            "2026-04-20T07:30:00Z",
+            '["trusted-secondary-blog:entry-9"]',
+            '["trusted-secondary-blog:entry-9"]',
+            "trusted_secondary",
+        ),
     ]
 
 
-def test_source_registry_state_preserves_promoted_ids_and_notes(monkeypatch, tmp_path: Path) -> None:
+def test_source_registry_state_updates_promoted_ids_and_preserves_notes(monkeypatch, tmp_path: Path) -> None:
     _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
     database_path = tmp_path / "state" / "codex-pulse.db"
     initialize_database(database_path)
@@ -253,7 +271,7 @@ def test_source_registry_state_preserves_promoted_ids_and_notes(monkeypatch, tmp
         "official-blog",
         "2026-04-20T07:35:00Z",
         '["official-blog:post-2"]',
-        '["official-blog:post-1"]',
+        '["official-blog:post-2"]',
         "keep this note",
     )
 
