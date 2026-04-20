@@ -15,7 +15,12 @@ from hermes_pulse.connectors.notes import NotesConnector
 from hermes_pulse.connectors.x_url import XUrlConnector
 from hermes_pulse.delivery.local_markdown import LocalMarkdownDelivery
 from hermes_pulse.models import CollectedItem, TriggerEvent, TriggerScope
-from hermes_pulse.rendering import render_leave_now_warning
+from hermes_pulse.rendering import (
+    render_feed_update_nudge,
+    render_leave_now_warning,
+    render_mail_operational_warning,
+    render_shopping_replenishment_action_prep,
+)
 from hermes_pulse.source_registry import load_source_registry
 from hermes_pulse.summarization import CodexCliSummarizer
 from hermes_pulse.trigger_registry import get_trigger_profile
@@ -35,7 +40,18 @@ class BoundConnector:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="codex-pulse")
-    parser.add_argument("command", nargs="?", choices=("morning-digest", "evening-digest", "leave-now-warning"))
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=(
+            "morning-digest",
+            "evening-digest",
+            "leave-now-warning",
+            "mail-operational",
+            "shopping-replenishment",
+            "feed-update",
+        ),
+    )
     parser.add_argument("--source-registry", type=Path)
     parser.add_argument("--feed-fixture", type=Path)
     parser.add_argument("--search-fixture", type=Path)
@@ -65,6 +81,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         markdown = CodexCliSummarizer().summarize_archive(archive_directory).content
     elif args.command == "leave-now-warning":
         markdown = _build_leave_now_warning(args)
+    elif args.command == "mail-operational":
+        markdown = _build_mail_operational(args)
+    elif args.command == "shopping-replenishment":
+        markdown = _build_shopping_replenishment(args)
+    elif args.command == "feed-update":
+        markdown = _build_feed_update(args)
     else:
         return 0
 
@@ -83,10 +105,31 @@ def _build_leave_now_warning(args: argparse.Namespace) -> str | None:
     return render_leave_now_warning(items, now=_parse_timestamp(args.now) if args.now else datetime.now(timezone.utc))
 
 
+def _build_mail_operational(args: argparse.Namespace) -> str | None:
+    items = _build_event_trigger_items("mail.operational.default", args)
+    return render_mail_operational_warning(items)
+
+
+def _build_shopping_replenishment(args: argparse.Namespace) -> str | None:
+    items = _build_event_trigger_items("shopping.replenishment.default", args)
+    return render_shopping_replenishment_action_prep(items)
+
+
+def _build_feed_update(args: argparse.Namespace) -> str | None:
+    items = _build_event_trigger_items("feed.update.default", args)
+    return render_feed_update_nudge(items)
+
+
 def _build_event_trigger_items(profile_id: str, args: argparse.Namespace) -> list[CollectedItem]:
     profile = get_trigger_profile(profile_id)
+    source_registry = load_source_registry(args.source_registry or DEFAULT_SOURCE_REGISTRY)
+    feed_fetcher = _build_feed_fetcher(getattr(args, "feed_fixture", None))
+    search_fetcher = _build_feed_fetcher(getattr(args, "search_fixture", None))
     calendar_fixture = getattr(args, "calendar_fixture", None)
+    gmail_fixture = getattr(args, "gmail_fixture", None)
+    notes_path = getattr(args, "notes", None)
     calendar_runner = _build_json_runner(calendar_fixture)
+    gmail_runner = _build_json_runner(gmail_fixture)
     occurred_at = (args.now or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"))
     trigger = TriggerEvent(
         id=f"event:{profile.id}",
@@ -95,9 +138,20 @@ def _build_event_trigger_items(profile_id: str, args: argparse.Namespace) -> lis
         occurred_at=occurred_at,
         scope=TriggerScope(),
     )
-    connectors = {}
+    connectors = {
+        "feed_registry": BoundConnector(
+            lambda: FeedRegistryConnector(fetcher=feed_fetcher).collect(source_registry)
+        ),
+        "known_source_search": BoundConnector(
+            lambda: KnownSourceSearchConnector(fetcher=search_fetcher).collect(source_registry)
+        ),
+    }
     if calendar_runner is not None:
         connectors["google_calendar"] = BoundConnector(lambda: GoogleCalendarConnector(runner=calendar_runner).collect())
+    if gmail_runner is not None:
+        connectors["gmail"] = BoundConnector(lambda: GmailConnector(runner=gmail_runner).collect())
+    if notes_path is not None:
+        connectors["notes"] = BoundConnector(lambda: NotesConnector().collect(notes_path))
     return collect_for_trigger(trigger, profile, connectors)
 
 

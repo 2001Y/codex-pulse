@@ -31,6 +31,33 @@ TRIGGER_REGISTRY = {
         action_ceiling=1,
         cooldown_minutes=15,
     ),
+    "mail.operational.default": TriggerProfile(
+        id="mail.operational.default",
+        family="event",
+        event_type="mail.operational",
+        collection_preset="mail_operational",
+        output_mode="warning",
+        action_ceiling=2,
+        cooldown_minutes=30,
+    ),
+    "shopping.replenishment.default": TriggerProfile(
+        id="shopping.replenishment.default",
+        family="event",
+        event_type="shopping.replenishment",
+        collection_preset="shopping_replenishment",
+        output_mode="action_prep",
+        action_ceiling=2,
+        cooldown_minutes=720,
+    ),
+    "feed.update.default": TriggerProfile(
+        id="feed.update.default",
+        family="event",
+        event_type="feed.update",
+        collection_preset="known_source_delta",
+        output_mode="nudge",
+        action_ceiling=1,
+        cooldown_minutes=60,
+    ),
 }
 
 

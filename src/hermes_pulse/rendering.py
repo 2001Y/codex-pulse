@@ -64,6 +64,63 @@ def render_leave_now_warning(items: Iterable[CollectedItem], *, now: datetime) -
     return "\n".join(lines).rstrip() + "\n"
 
 
+def render_mail_operational_warning(items: Iterable[CollectedItem]) -> str | None:
+    item = next((value for value in items if value.source == "gmail" and value.intent_signals and value.intent_signals.unread), None)
+    if item is None:
+        return None
+    lines = [
+        "# Operational mail",
+        "",
+        f"- Subject: {item.title or item.id}",
+        f"- From: {item.people[0] if item.people else 'Unknown'}",
+    ]
+    summary = _single_line(item.excerpt) or _single_line(item.body)
+    if summary:
+        lines.append(f"- Summary: {summary}")
+    if item.url:
+        lines.append(f"- Mail URL: {item.url}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_shopping_replenishment_action_prep(items: Iterable[CollectedItem]) -> str | None:
+    item = next(iter(items), None)
+    if item is None:
+        return None
+    fields = _parse_key_value_lines(item.body or "")
+    lines = [
+        "# Shopping action prep",
+        "",
+        f"- Item: {fields.get('buy') or item.title or item.id}",
+    ]
+    if fields.get("why"):
+        lines.append(f"- Why: {fields['why']}")
+    if fields.get("preferred store"):
+        lines.append(f"- Preferred store: {fields['preferred store']}")
+    if fields.get("link"):
+        lines.append(f"- Link: {fields['link']}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_feed_update_nudge(items: Iterable[CollectedItem]) -> str | None:
+    feed_items = [item for item in items if item.source_kind == "feed_item"]
+    if not feed_items:
+        return None
+    feed_items.sort(key=lambda item: (0 if item.provenance and item.provenance.authority_tier == "primary" else 1, item.id))
+    item = feed_items[0]
+    lines = [
+        "# Feed update",
+        "",
+        f"- Source: {item.source}",
+        f"- Title: {item.title or item.id}",
+    ]
+    summary = _single_line(item.excerpt) or _single_line(item.body)
+    if summary:
+        lines.append(f"- Summary: {summary}")
+    if item.url:
+        lines.append(f"- URL: {item.url}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _render_section(
     section_name: str,
     candidates: list[Candidate],
@@ -156,6 +213,16 @@ def _format_timestamp(value: datetime) -> str:
 
 def _parse_timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+def _parse_key_value_lines(text: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        values[key.strip().lower()] = value.strip()
+    return values
 
 
 def _strip_html(text: str) -> str:

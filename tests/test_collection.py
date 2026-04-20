@@ -148,3 +148,84 @@ def test_calendar_leave_now_invokes_calendar_connector_only() -> None:
     assert google_calendar.calls == 1
     assert gmail.calls == 0
     assert notes.calls == 0
+
+
+def test_mail_operational_invokes_gmail_connector_only() -> None:
+    profile = get_trigger_profile("mail.operational.default")
+    trigger = TriggerEvent(
+        id="trigger-4",
+        type=profile.event_type,
+        profile_id=profile.id,
+        occurred_at="2026-04-21T09:00:00Z",
+        scope=TriggerScope(),
+    )
+    google_calendar = StubConnector("google_calendar")
+    gmail = StubConnector("gmail")
+
+    collected = collect_for_trigger(
+        trigger,
+        profile,
+        {
+            google_calendar.id: google_calendar,
+            gmail.id: gmail,
+        },
+    )
+
+    assert collected == ["gmail"]
+    assert google_calendar.calls == 0
+    assert gmail.calls == 1
+
+
+def test_shopping_replenishment_invokes_notes_connector_only() -> None:
+    profile = get_trigger_profile("shopping.replenishment.default")
+    trigger = TriggerEvent(
+        id="trigger-5",
+        type=profile.event_type,
+        profile_id=profile.id,
+        occurred_at="2026-04-21T09:00:00Z",
+        scope=TriggerScope(),
+    )
+    gmail = StubConnector("gmail")
+    notes = StubConnector("notes")
+
+    collected = collect_for_trigger(
+        trigger,
+        profile,
+        {
+            gmail.id: gmail,
+            notes.id: notes,
+        },
+    )
+
+    assert collected == ["notes"]
+    assert gmail.calls == 0
+    assert notes.calls == 1
+
+
+def test_feed_update_invokes_feed_and_known_source_search_only() -> None:
+    profile = get_trigger_profile("feed.update.default")
+    trigger = TriggerEvent(
+        id="trigger-6",
+        type=profile.event_type,
+        profile_id=profile.id,
+        occurred_at="2026-04-21T09:00:00Z",
+        scope=TriggerScope(),
+    )
+    feed = StubConnector("feed_registry")
+    known_source_search = StubConnector("known_source_search")
+    gmail = StubConnector("gmail")
+
+    collected = collect_for_trigger(
+        trigger,
+        profile,
+        {
+            feed.id: feed,
+            known_source_search.id: known_source_search,
+            gmail.id: gmail,
+        },
+    )
+
+    assert collected == ["feed_registry", "known_source_search"]
+    assert feed.calls == 1
+    assert known_source_search.calls == 1
+    assert gmail.calls == 0

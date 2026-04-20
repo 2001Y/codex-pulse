@@ -1,0 +1,24 @@
+[
+  {
+    "id": "msg-op-1",
+    "threadId": "thread-op-1",
+    "from": "Reservations <reservations@example.com>",
+    "to": "me@example.com",
+    "subject": "Dinner reservation time changed",
+    "date": "2026-04-21T08:30:00Z",
+    "snippet": "Your dinner reservation was moved to 19:30.",
+    "body": "Your dinner reservation was moved to 19:30. Please review the updated booking.",
+    "labels": ["INBOX", "UNREAD"]
+  },
+  {
+    "id": "msg-op-2",
+    "threadId": "thread-op-2",
+    "from": "Store <store@example.com>",
+    "to": "me@example.com",
+    "subject": "Weekly newsletter",
+    "date": "2026-04-21T07:00:00Z",
+    "snippet": "This week's sale items.",
+    "body": "Promotional newsletter body.",
+    "labels": ["INBOX"]
+  }
+]

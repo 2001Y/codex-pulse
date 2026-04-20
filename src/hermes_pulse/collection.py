@@ -24,6 +24,9 @@ COLLECTION_PRESETS = {
         "notes",
     ],
     "calendar_leave_now": ["google_calendar"],
+    "mail_operational": ["gmail"],
+    "shopping_replenishment": ["notes"],
+    "known_source_delta": ["feed_registry", "known_source_search"],
 }
 
 
