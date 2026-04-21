@@ -12,7 +12,11 @@ from hermes_pulse.archive import write_morning_digest_archive
 from hermes_pulse.cli import _build_morning_digest
 from hermes_pulse.summarization import CodexCliSummarizer
 from hermes_pulse.summarization.base import CODEX_DIGEST_RELATIVE_PATH, SummaryArtifact
-from hermes_pulse.summarization.codex_cli import DEFAULT_CODEX_MODEL, DEFAULT_SUMMARY_FORMAT
+from hermes_pulse.summarization.codex_cli import (
+    DEFAULT_CODEX_MODEL,
+    DEFAULT_SUMMARY_FORMAT,
+    build_summary_format_instructions,
+)
 
 
 DEFAULT_SLACK_DIRECT_PATH = Path.home() / ".hermes" / "scripts" / "slack_direct.py"

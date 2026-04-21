@@ -114,10 +114,10 @@ def build_summary_format_instructions(summary_format: str) -> list[str]:
     if summary_format == "briefing-v1":
         return [
             "出力フォーマットは briefing-v1 を厳守してください。",
-            "見出しはこの順番で固定してください: `# Hermes Pulse Morning Briefing` / `## 主要トピック` / `## 今日の予定・期限` / `## 気になるメモ`。",
-            "`## 主要トピック` は 3〜6 件の箇条書き、各項目は 1 行で要点→必要ならリンク。",
-            "`## 今日の予定・期限` は当日または近い日時の予定だけを書く。無ければ `- 目立った予定なし`。",
-            "`## 気になるメモ` は 0〜3 件の短い箇条書きに限定し、推測は書かない。無ければ `- 特になし`。",
+            "見出しはこの順番で固定してください: `:sunny: *Hermes Pulse Morning Briefing*` / `:white_medium_small_square: 主要トピック` / `:white_medium_small_square: 今日の予定・期限` / `:white_medium_small_square: 気になるメモ`。",
+            "`:white_medium_small_square: 主要トピック` は 3〜6 件の箇条書き、各項目は 1 行で要点→必要ならリンク。",
+            "`:white_medium_small_square: 今日の予定・期限` は当日または近い日時の予定だけを書く。無ければ `- 目立った予定なし`。",
+            "`:white_medium_small_square: 気になるメモ` は 0〜3 件の短い箇条書きに限定し、推測は書かない。無ければ `- 特になし`。",
         ]
     raise ValueError(f"Unsupported summary format: {summary_format}")
 
