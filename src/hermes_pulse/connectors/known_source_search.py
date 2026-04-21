@@ -1,10 +1,10 @@
 import logging
-import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
+from xml.etree import ElementTree
 
 from hermes_pulse.models import CitationLink, CollectedItem, Provenance, SourceRegistryEntry
 
@@ -180,25 +180,68 @@ def _collect_direct_items(
     fetcher: Callable[[str], str],
     query: str,
 ) -> list[CollectedItem] | None:
-    if entry.domain == 'anthropic.com':
+    if _supports_anthropic_news_sitemap(entry):
         payload = fetcher('https://www.anthropic.com/sitemap.xml')
-        urls = re.findall(r'<loc>(https://www\.anthropic\.com/news[^<]+)</loc>', payload)
-        return _build_direct_items(entry, urls, query=query)
-    if entry.domain == 'x.ai':
+        urls = _extract_sitemap_urls(payload, prefix='https://www.anthropic.com/news/')
+        return _build_direct_items(entry, urls, query=query) if urls else None
+    if _supports_xai_news_page(entry):
         payload = fetcher('https://x.ai/news')
-        urls = []
-        for href in re.findall(r'href=["\'](/news/[^"\'#?]+|https://x\.ai/news/[^"\'#?]+)["\']', payload):
-            if href.startswith('/news/'):
-                href = f'https://x.ai{href}'
-            urls.append(href)
-        deduped = []
-        seen = set()
-        for url in urls:
-            if url not in seen:
-                seen.add(url)
-                deduped.append(url)
-        return _build_direct_items(entry, deduped, query=query)
+        urls = _extract_news_page_urls(payload, base_url='https://x.ai/news', path_prefix='/news/')
+        return _build_direct_items(entry, urls, query=query) if urls else None
     return None
+
+
+def _supports_anthropic_news_sitemap(entry: SourceRegistryEntry) -> bool:
+    return any(hint.strip().startswith('site:anthropic.com/news') for hint in entry.search_hints)
+
+
+def _supports_xai_news_page(entry: SourceRegistryEntry) -> bool:
+    return any(hint.strip().startswith('site:x.ai/news') for hint in entry.search_hints)
+
+
+def _extract_sitemap_urls(payload: str, *, prefix: str) -> list[str]:
+    root = ElementTree.fromstring(payload)
+    urls: list[str] = []
+    for element in root.iter():
+        if element.tag.rsplit('}', 1)[-1] != 'loc' or element.text is None:
+            continue
+        url = element.text.strip()
+        if url.startswith(prefix):
+            urls.append(url)
+    return urls
+
+
+class _NewsLinkParser(HTMLParser):
+    def __init__(self, *, base_url: str, path_prefix: str) -> None:
+        super().__init__()
+        self._base_url = base_url
+        self._path_prefix = path_prefix
+        self.urls: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != 'a':
+            return
+        href = dict(attrs).get('href')
+        if href is None:
+            return
+        resolved = urljoin(self._base_url, href)
+        parsed = urlparse(resolved)
+        if parsed.path.startswith(self._path_prefix):
+            self.urls.append(resolved)
+
+
+def _extract_news_page_urls(payload: str, *, base_url: str, path_prefix: str) -> list[str]:
+    parser = _NewsLinkParser(base_url=base_url, path_prefix=path_prefix)
+    parser.feed(payload)
+    parser.close()
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for url in parser.urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        deduped.append(url)
+    return deduped
 
 
 def _build_direct_items(entry: SourceRegistryEntry, urls: Sequence[str], *, query: str) -> list[CollectedItem]:

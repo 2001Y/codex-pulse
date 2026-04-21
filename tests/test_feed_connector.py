@@ -23,6 +23,18 @@ RDF_FIXTURE_XML = """<?xml version="1.0" encoding="UTF-8"?>
   </item>
 </rdf:RDF>
 """
+APPLE_NEWSROOM_ATOM = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Apple Newsroom</title>
+  <entry>
+    <title>Apple expands something</title>
+    <id>https://www.apple.com/newsroom/2026/04/apple-expands-something/</id>
+    <link href="https://www.apple.com/newsroom/2026/04/apple-expands-something/"/>
+    <updated>2026-04-20T17:00:00Z</updated>
+    <summary>Important newsroom update.</summary>
+  </entry>
+</feed>
+"""
 
 
 def test_feed_registry_connector_collects_feed_items_with_provenance() -> None:
@@ -74,6 +86,28 @@ def test_feed_registry_connector_collects_rdf_feed_items_with_provenance() -> No
     assert item.provenance is not None
     assert item.provenance.primary_source_url == "https://applech2.com/2026/04/index-update"
     assert item.citation_chain[0].relation == "secondary"
+
+
+def test_feed_registry_connector_collects_atom_entries_with_link_href_and_updated_timestamp() -> None:
+    entry = SourceRegistryEntry(
+        id="apple-newsroom",
+        source_family="official_newsroom",
+        domain="apple.com",
+        title="Apple Newsroom",
+        acquisition_mode="rss_poll",
+        authority_tier="primary",
+        rss_url="https://www.apple.com/newsroom/rss-feed.rss",
+    )
+
+    items = FeedRegistryConnector(fetcher=lambda url: APPLE_NEWSROOM_ATOM).collect([entry])
+
+    assert len(items) == 1
+    item = items[0]
+    assert item.title == "Apple expands something"
+    assert item.url == "https://www.apple.com/newsroom/2026/04/apple-expands-something/"
+    assert item.excerpt == "Important newsroom update."
+    assert item.timestamps is not None
+    assert item.timestamps.created_at == "2026-04-20T17:00:00Z"
 
 
 def test_feed_registry_connector_enriches_body_from_article_page_when_available() -> None:
@@ -212,3 +246,45 @@ def test_feed_registry_connector_continues_when_a_feed_parse_fails() -> None:
 
     assert [item.source for item in items] == ["official-blog"]
     assert [item.title for item in items] == ["Launch update"]
+
+
+def test_feed_registry_connector_reports_per_source_errors_to_callback() -> None:
+    entries = [
+        SourceRegistryEntry(
+            id="broken-feed",
+            source_family="company_updates",
+            domain="broken.example.com",
+            title="Broken Feed",
+            acquisition_mode="rss_poll",
+            authority_tier="primary",
+            rss_url="https://broken.example.com/feed.xml",
+        ),
+        SourceRegistryEntry(
+            id="official-blog",
+            source_family="company_updates",
+            domain="example.com",
+            title="Example Official Blog",
+            acquisition_mode="rss_poll",
+            authority_tier="primary",
+            rss_url="https://example.com/feed.xml",
+        ),
+    ]
+    reported_errors: list[tuple[str, str]] = []
+    reported_successes: list[str] = []
+
+    def fetcher(url: str) -> str:
+        if url == "https://broken.example.com/feed.xml":
+            raise TimeoutError("timed out")
+        return FIXTURE_XML
+
+    connector = FeedRegistryConnector(
+        fetcher=fetcher,
+        error_handler=lambda entry_id, message: reported_errors.append((entry_id, message)),
+        success_handler=lambda entry_id: reported_successes.append(entry_id),
+    )
+
+    items = connector.collect(entries)
+
+    assert [item.source for item in items] == ["official-blog"]
+    assert reported_errors == [("broken-feed", "timed out")]
+    assert reported_successes == ["official-blog"]

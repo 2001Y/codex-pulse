@@ -1,4 +1,5 @@
 import argparse
+import inspect
 import json
 import sqlite3
 from collections.abc import Callable, Sequence
@@ -162,7 +163,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     delivery_succeeded = False
     pending_connector_cursor_update: tuple[list[CollectedItem], list[str], str] | None = None
-    pending_source_registry_state_update: tuple[list[SourceRegistryEntry], list[CollectedItem], str] | None = None
+    pending_source_registry_state_update: tuple[list[SourceRegistryEntry], list[CollectedItem], str, dict[str, str], set[str]] | None = None
     pending_suppression_update: tuple[list[CollectedItem], str, str, str] | None = None
     pending_feedback_update: tuple[list[CollectedItem], str, str] | None = None
     pending_approval_action_update: tuple[list[CollectedItem], str, str] | None = None
@@ -170,7 +171,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         markdown: str | None = None
 
         if args.command in {"morning-digest", "evening-digest"}:
-            items = _build_digest(args.command, args)
+            items, source_errors, successful_sources = _build_digest_with_source_errors(args.command, args)
             occurred_at = _occurred_at_for_command(args.command, args)
             deliverable_items = items
             if args.state_db is not None:
@@ -189,6 +190,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     load_source_registry(args.source_registry or DEFAULT_SOURCE_REGISTRY),
                     items,
                     occurred_at,
+                    source_errors,
+                    successful_sources,
                 )
                 if run_id is not None:
                     pending_suppression_update = (deliverable_items, profile.event_type, occurred_at, run_id)
@@ -244,12 +247,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
 
         if args.state_db is not None and pending_source_registry_state_update is not None:
-            source_registry, items, occurred_at = pending_source_registry_state_update
+            source_registry, items, occurred_at, source_errors, successful_sources = pending_source_registry_state_update
             _record_source_registry_state(
                 args.state_db,
                 source_registry=source_registry,
                 items=items,
                 occurred_at=occurred_at,
+                source_errors=source_errors,
+                successful_sources=successful_sources,
             )
 
         if args.state_db is not None and pending_feedback_update is not None:
@@ -304,6 +309,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _build_morning_digest(args: argparse.Namespace) -> list[CollectedItem]:
     return _build_digest("morning-digest", args)
+
+
+def _build_digest(command: str, args: argparse.Namespace) -> list[CollectedItem]:
+    items, _, _ = _build_digest_with_source_errors(command, args)
+    return items
 
 
 def _profile_for_command(command: str | None):
@@ -389,27 +399,38 @@ def _record_source_registry_state(
     items: list[CollectedItem],
     occurred_at: str,
     source_errors: dict[str, str] | None = None,
+    successful_sources: set[str] | None = None,
 ) -> None:
     item_ids_by_source: dict[str, list[str]] = {}
     for item in items:
         item_ids_by_source.setdefault(item.source, []).append(item.id)
     source_errors = source_errors or {}
+    successful_sources = successful_sources or set()
 
     for entry in source_registry:
         if entry.acquisition_mode not in {"rss_poll", "atom_poll", "known_source_search"}:
             continue
-        if entry.id not in item_ids_by_source and entry.id not in source_errors:
+        if entry.id not in item_ids_by_source and entry.id not in source_errors and entry.id not in successful_sources:
             continue
         existing_state = _get_source_registry_state(path, registry_id=entry.id)
         existing_notes = None if existing_state is None else existing_state["notes"]
         notes_payload = _build_source_registry_notes(existing_notes, last_error=source_errors.get(entry.id))
         item_ids = item_ids_by_source.get(entry.id)
+        if item_ids is not None:
+            seen_item_ids = json.dumps(item_ids, ensure_ascii=False)
+            promoted_item_ids = json.dumps(item_ids, ensure_ascii=False)
+        elif entry.id in successful_sources:
+            seen_item_ids = json.dumps([], ensure_ascii=False)
+            promoted_item_ids = json.dumps([], ensure_ascii=False)
+        else:
+            seen_item_ids = None if existing_state is None else existing_state["last_seen_item_ids"]
+            promoted_item_ids = None if existing_state is None else existing_state["last_promoted_item_ids"]
         upsert_source_registry_state(
             path,
             registry_id=entry.id,
             last_poll_at=occurred_at,
-            last_seen_item_ids=json.dumps(item_ids, ensure_ascii=False) if item_ids is not None else (None if existing_state is None else existing_state["last_seen_item_ids"]),
-            last_promoted_item_ids=json.dumps(item_ids, ensure_ascii=False) if item_ids is not None else (None if existing_state is None else existing_state["last_promoted_item_ids"]),
+            last_seen_item_ids=seen_item_ids,
+            last_promoted_item_ids=promoted_item_ids,
             authority_tier=entry.authority_tier,
             notes=json.dumps(notes_payload, ensure_ascii=False) if notes_payload is not None else None,
         )
@@ -451,8 +472,7 @@ def _build_source_registry_notes(existing_notes: str | None, *, last_error: str 
                 payload = {"review_note": existing_notes}
     else:
         payload = {}
-    if last_error is not None or payload:
-        payload["last_error"] = last_error
+    payload["last_error"] = last_error
     return payload or None
 
 
@@ -768,7 +788,7 @@ def _build_event_trigger_items(profile_id: str, args: argparse.Namespace) -> lis
     return collect_for_trigger(trigger, profile, connectors)
 
 
-def _build_digest(command: str, args: argparse.Namespace) -> list[CollectedItem]:
+def _build_digest_with_source_errors(command: str, args: argparse.Namespace) -> tuple[list[CollectedItem], dict[str, str], set[str]]:
     profile_id = {
         "morning-digest": "digest.morning.default",
         "evening-digest": "digest.evening.default",
@@ -781,6 +801,8 @@ def _build_digest(command: str, args: argparse.Namespace) -> list[CollectedItem]
     gmail_fixture = getattr(args, "gmail_fixture", None)
     calendar_runner = _build_json_runner(calendar_fixture)
     gmail_runner = _build_json_runner(gmail_fixture)
+    source_errors: dict[str, str] = {}
+    successful_sources: set[str] = set()
     occurred_at = (getattr(args, "now", None) or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"))
     trigger = TriggerEvent(
         id="scheduled:digest.morning.default",
@@ -791,10 +813,20 @@ def _build_digest(command: str, args: argparse.Namespace) -> list[CollectedItem]
     )
     connectors = {
         "feed_registry": BoundConnector(
-            lambda: FeedRegistryConnector(fetcher=feed_fetcher).collect(source_registry)
+            lambda: _build_source_registry_connector(
+                FeedRegistryConnector,
+                fetcher=feed_fetcher,
+                error_handler=lambda entry_id, message: source_errors.__setitem__(entry_id, message),
+                success_handler=lambda entry_id: successful_sources.add(entry_id),
+            ).collect(source_registry)
         ),
         "known_source_search": BoundConnector(
-            lambda: KnownSourceSearchConnector(fetcher=search_fetcher).collect(source_registry)
+            lambda: _build_source_registry_connector(
+                KnownSourceSearchConnector,
+                fetcher=search_fetcher,
+                error_handler=lambda entry_id, message: source_errors.__setitem__(entry_id, message),
+                success_handler=lambda entry_id: successful_sources.add(entry_id),
+            ).collect(source_registry)
         ),
     }
     if calendar_runner is not None:
@@ -810,7 +842,23 @@ def _build_digest(command: str, args: argparse.Namespace) -> list[CollectedItem]
         )
     if args.notes is not None:
         connectors["notes"] = BoundConnector(lambda: NotesConnector().collect(args.notes))
-    return collect_for_trigger(trigger, profile, connectors)
+    return collect_for_trigger(trigger, profile, connectors), source_errors, successful_sources
+
+
+def _build_source_registry_connector(
+    connector_cls: type,
+    *,
+    fetcher: Callable[[str], str] | None,
+    error_handler: Callable[[str, str], None],
+    success_handler: Callable[[str], None],
+):
+    parameters = inspect.signature(connector_cls.__init__).parameters
+    kwargs: dict[str, object] = {"fetcher": fetcher}
+    if "error_handler" in parameters:
+        kwargs["error_handler"] = error_handler
+    if "success_handler" in parameters:
+        kwargs["success_handler"] = success_handler
+    return connector_cls(**kwargs)
 
 
 def _build_feed_fetcher(feed_fixture: Path | None) -> Callable[[str], str] | None:

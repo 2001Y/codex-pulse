@@ -1981,3 +1981,120 @@ def test_failed_digest_does_not_persist_source_registry_state(monkeypatch, tmp_p
         ).fetchall()
 
     assert registry_state == []
+
+
+def test_morning_digest_records_live_source_errors_without_failing_the_run(monkeypatch, tmp_path: Path) -> None:
+    _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
+    database_path = tmp_path / "state" / "hermes-pulse.db"
+
+    class FakeFeedRegistryConnector:
+        def __init__(self, fetcher=None, page_fetcher=None, error_handler=None) -> None:
+            self._error_handler = error_handler
+
+        def collect(self, entries):
+            if self._error_handler is not None:
+                self._error_handler("official-blog", "feed timeout")
+            return [
+                hermes_pulse.cli.CollectedItem(
+                    id="trusted-secondary-blog:post-2",
+                    source="trusted-secondary-blog",
+                    source_kind="feed_item",
+                    title="Trusted post",
+                    provenance=Provenance(
+                        provider="trusted.example.org",
+                        acquisition_mode="atom_poll",
+                        authority_tier="trusted_secondary",
+                        primary_source_url="https://trusted.example.org/posts/2",
+                        raw_record_id="post-2",
+                    ),
+                )
+            ]
+
+    monkeypatch.setattr(hermes_pulse.cli, "FeedRegistryConnector", FakeFeedRegistryConnector)
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--state-db",
+                str(database_path),
+                "--now",
+                "2026-04-20T09:30:00Z",
+            ]
+        )
+        == 0
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        rows = connection.execute(
+            "SELECT registry_id, last_seen_item_ids, notes FROM source_registry_state ORDER BY registry_id"
+        ).fetchall()
+
+    assert rows == [
+        ("official-blog", None, '{"last_error": "feed timeout"}'),
+        ("trusted-secondary-blog", '["trusted-secondary-blog:post-2"]', '{"last_error": null}'),
+    ]
+
+
+def test_morning_digest_clears_last_error_after_successful_empty_poll(monkeypatch, tmp_path: Path) -> None:
+    _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
+    database_path = tmp_path / "state" / "hermes-pulse.db"
+
+    class FailingFeedRegistryConnector:
+        def __init__(self, fetcher=None, page_fetcher=None, error_handler=None, success_handler=None) -> None:
+            self._error_handler = error_handler
+
+        def collect(self, entries):
+            if self._error_handler is not None:
+                self._error_handler("official-blog", "feed timeout")
+            return []
+
+    monkeypatch.setattr(hermes_pulse.cli, "FeedRegistryConnector", FailingFeedRegistryConnector)
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--state-db",
+                str(database_path),
+                "--now",
+                "2026-04-20T09:35:00Z",
+            ]
+        )
+        == 0
+    )
+
+    class EmptySuccessfulFeedRegistryConnector:
+        def __init__(self, fetcher=None, page_fetcher=None, error_handler=None, success_handler=None) -> None:
+            self._success_handler = success_handler
+
+        def collect(self, entries):
+            if self._success_handler is not None:
+                self._success_handler("official-blog")
+            return []
+
+    monkeypatch.setattr(hermes_pulse.cli, "FeedRegistryConnector", EmptySuccessfulFeedRegistryConnector)
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--state-db",
+                str(database_path),
+                "--now",
+                "2026-04-20T09:40:00Z",
+            ]
+        )
+        == 0
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            "SELECT last_poll_at, last_seen_item_ids, last_promoted_item_ids, notes FROM source_registry_state WHERE registry_id = 'official-blog'"
+        ).fetchone()
+
+    assert row == ("2026-04-20T09:40:00Z", "[]", "[]", '{"last_error": null}')

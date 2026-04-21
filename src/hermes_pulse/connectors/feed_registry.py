@@ -24,9 +24,13 @@ class FeedRegistryConnector:
         self,
         fetcher: Callable[[str], str] | None = None,
         page_fetcher: Callable[[str], str] | None = None,
+        error_handler: Callable[[str, str], None] | None = None,
+        success_handler: Callable[[str], None] | None = None,
     ) -> None:
         self._fetcher = fetcher or _fetch_url
         self._page_fetcher = page_fetcher
+        self._error_handler = error_handler
+        self._success_handler = success_handler
 
     def collect(self, entries: Sequence[SourceRegistryEntry]) -> list[CollectedItem]:
         items: list[CollectedItem] = []
@@ -36,8 +40,12 @@ class FeedRegistryConnector:
             try:
                 payload = self._fetcher(entry.rss_url)
                 items.extend(self._parse_items(entry, payload))
+                if self._success_handler is not None:
+                    self._success_handler(entry.id)
             except Exception as exc:
                 logger.warning("Skipping feed source %s after fetch/parse failure: %s", entry.id, exc)
+                if self._error_handler is not None:
+                    self._error_handler(entry.id, str(exc))
         return items
 
     def _parse_items(self, entry: SourceRegistryEntry, payload: str) -> list[CollectedItem]:
@@ -45,8 +53,10 @@ class FeedRegistryConnector:
         parsed_items: list[CollectedItem] = []
         for raw_item in _iter_feed_items(root):
             title = _text(raw_item, "title")
-            url = _text(raw_item, "link")
-            guid = _text(raw_item, "guid") or url or title or entry.id
+            url = _item_link(raw_item)
+            guid = _text(raw_item, "guid") or _text(raw_item, "id") or url or title or entry.id
+            published_at = _text(raw_item, "pubDate") or _text(raw_item, "updated") or _text(raw_item, "published")
+            excerpt = _text(raw_item, "description") or _text(raw_item, "summary")
             relation = "primary" if entry.authority_tier == "primary" else "secondary"
             parsed_items.append(
                 CollectedItem(
@@ -54,10 +64,10 @@ class FeedRegistryConnector:
                     source=entry.id,
                     source_kind="feed_item",
                     title=title,
-                    excerpt=_text(raw_item, "description"),
+                    excerpt=excerpt,
                     body=self._fetch_article_body(url),
                     url=url,
-                    timestamps=ItemTimestamps(created_at=_text(raw_item, "pubDate")),
+                    timestamps=ItemTimestamps(created_at=published_at),
                     provenance=Provenance(
                         provider=entry.domain,
                         acquisition_mode=entry.acquisition_mode,
@@ -131,6 +141,7 @@ def _iter_feed_items(root: ElementTree.Element) -> Iterator[ElementTree.Element]
     if channel is not None:
         yield from _children(channel, "item")
     yield from _children(root, "item")
+    yield from _children(root, "entry")
 
 
 def _child(element: ElementTree.Element, tag: str) -> ElementTree.Element | None:
@@ -149,6 +160,18 @@ def _children(element: ElementTree.Element, tag: str) -> Iterator[ElementTree.El
 def _text(element: ElementTree.Element, tag: str) -> str | None:
     node = _child(element, tag)
     if node is None or node.text is None:
+        return None
+    return node.text.strip()
+
+
+def _item_link(element: ElementTree.Element) -> str | None:
+    node = _child(element, "link")
+    if node is None:
+        return None
+    href = node.attrib.get('href')
+    if href:
+        return href.strip()
+    if node.text is None:
         return None
     return node.text.strip()
 

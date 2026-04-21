@@ -180,6 +180,61 @@ def test_known_source_search_connector_uses_xai_news_page_when_supported() -> No
     ]
 
 
+def test_known_source_search_connector_keeps_path_scoped_anthropic_entries_on_search_fallback() -> None:
+    requested_urls: list[str] = []
+
+    def fetcher(url: str) -> str:
+        requested_urls.append(url)
+        return FIXTURE_HTML
+
+    entry = SourceRegistryEntry(
+        id="anthropic-engineering",
+        source_family="official_engineering_blog",
+        domain="anthropic.com",
+        title="Anthropic Engineering",
+        acquisition_mode="known_source_search",
+        authority_tier="primary",
+        search_hints=["site:anthropic.com/engineering Anthropic engineering"],
+    )
+
+    items = KnownSourceSearchConnector(fetcher=fetcher).collect([entry])
+
+    assert len(items) == 0
+    parsed = urlparse(requested_urls[0])
+    assert parsed.netloc == "html.duckduckgo.com"
+    assert parse_qs(parsed.query)["q"] == ["site:anthropic.com/engineering Anthropic engineering"]
+
+
+def test_known_source_search_connector_falls_back_to_search_when_direct_source_yields_no_items() -> None:
+    requested_urls: list[str] = []
+
+    def fetcher(url: str) -> str:
+        requested_urls.append(url)
+        if url == "https://x.ai/news":
+            return "<html><body><a href='/about'>About</a></body></html>"
+        if url.startswith("https://html.duckduckgo.com/html/?q="):
+            return FIXTURE_HTML
+        raise AssertionError(url)
+
+    entry = SourceRegistryEntry(
+        id="xai-news",
+        source_family="official_lab_news",
+        domain="x.ai",
+        title="xAI News",
+        acquisition_mode="known_source_search",
+        authority_tier="primary",
+        search_hints=["site:x.ai/news xAI announcement"],
+    )
+
+    items = KnownSourceSearchConnector(fetcher=fetcher).collect([entry])
+
+    assert requested_urls == [
+        "https://x.ai/news",
+        "https://html.duckduckgo.com/html/?q=site%3Ax.ai%2Fnews+xAI+announcement",
+    ]
+    assert items == []
+
+
 def test_known_source_search_connector_reports_per_source_errors_to_callback() -> None:
     entry = SourceRegistryEntry(
         id="discovery-only-source",
