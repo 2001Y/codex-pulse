@@ -39,8 +39,9 @@ class DirectDeliveryWrapperSpec:
 class LaunchdPlistSpec:
     label: str
     program_arguments: Sequence[str]
-    hour: int
-    minute: int
+    hour: int | None = None
+    minute: int | None = None
+    interval_seconds: int | None = None
     working_directory: Path | None = None
     standard_out_path: Path | None = None
     standard_error_path: Path | None = None
@@ -49,10 +50,34 @@ class LaunchdPlistSpec:
     def __post_init__(self) -> None:
         if not self.label:
             raise ValueError("launchd label must not be empty")
-        if not 0 <= self.hour <= 23:
-            raise ValueError("launchd hour must be between 0 and 23")
-        if not 0 <= self.minute <= 59:
-            raise ValueError("launchd minute must be between 0 and 59")
+        uses_calendar = self.hour is not None or self.minute is not None
+        uses_interval = self.interval_seconds is not None
+        if uses_calendar == uses_interval:
+            raise ValueError("launchd spec must use either calendar schedule or interval schedule")
+        if uses_calendar:
+            if self.hour is None or self.minute is None:
+                raise ValueError("launchd calendar schedule requires both hour and minute")
+            if not 0 <= self.hour <= 23:
+                raise ValueError("launchd hour must be between 0 and 23")
+            if not 0 <= self.minute <= 59:
+                raise ValueError("launchd minute must be between 0 and 59")
+        if uses_interval:
+            assert self.interval_seconds is not None
+            if self.interval_seconds <= 0:
+                raise ValueError("launchd interval must be greater than 0")
+
+
+@dataclass(frozen=True)
+class LocationDwellWrapperSpec:
+    python_executable: Path
+    repo_root: Path
+    channel: str
+    state_db: Path
+    output_path: Path
+    thread_ts: str | None = None
+    source_registry: Path | None = None
+    working_directory: Path | None = None
+    shared_env_path: Path = DEFAULT_SHARED_ENV_PATH
 
 
 @dataclass(frozen=True)
@@ -133,13 +158,81 @@ def render_direct_delivery_wrapper(spec: DirectDeliveryWrapperSpec) -> str:
     )
 
 
+def build_location_dwell_program_arguments(spec: LocationDwellWrapperSpec) -> list[str]:
+    args = [
+        str(spec.python_executable),
+        "-m",
+        "hermes_pulse.cli",
+        "location-dwell",
+    ]
+    if spec.source_registry is not None:
+        args.extend(["--source-registry", str(spec.source_registry)])
+    args.extend(["--state-db", str(spec.state_db), "--output", str(spec.output_path)])
+    return args
+
+
+def build_location_dwell_slack_post_arguments(spec: LocationDwellWrapperSpec) -> list[str]:
+    args = [
+        str(spec.python_executable),
+        "-m",
+        "hermes_pulse.slack_direct",
+        "--input-file",
+        str(spec.output_path),
+        "--channel",
+        spec.channel,
+    ]
+    if spec.thread_ts is not None:
+        args.extend(["--thread-ts", spec.thread_ts])
+    return args
+
+
+def render_location_dwell_wrapper(spec: LocationDwellWrapperSpec) -> str:
+    repo_root = Path(spec.repo_root)
+    working_directory = Path(spec.working_directory or repo_root)
+    python_path_root = repo_root / "src"
+    shared_env_path = spec.shared_env_path
+    shared_env_reference = (
+        f"~/{shared_env_path.relative_to(Path.home())}"
+        if shared_env_path.is_absolute() and Path.home() in shared_env_path.parents
+        else str(shared_env_path)
+    )
+    shared_env_shell = shared_env_reference if shared_env_reference.startswith("~/") else shlex.quote(shared_env_reference)
+    cli_command = " ".join(shlex.quote(argument) for argument in build_location_dwell_program_arguments(spec))
+    slack_command = " ".join(shlex.quote(argument) for argument in build_location_dwell_slack_post_arguments(spec))
+    output_path = shlex.quote(str(spec.output_path))
+    return "\n".join(
+        [
+            "#!/bin/zsh",
+            "set -euo pipefail",
+            "",
+            f"export PATH={DEFAULT_LAUNCHD_PATH}",
+            f"export PYTHONPATH={shlex.quote(str(python_path_root))}\"${{PYTHONPATH:+:$PYTHONPATH}}\"",
+            "",
+            f'if [ -f {shared_env_shell} ]; then',
+            f'  source {shared_env_shell}',
+            "fi",
+            "",
+            f"cd {shlex.quote(str(working_directory))}",
+            f"rm -f {output_path}",
+            cli_command,
+            f"if [ -f {output_path} ]; then",
+            f"  {slack_command}",
+            "fi",
+            "",
+        ]
+    )
+
+
 def render_launchd_plist(spec: LaunchdPlistSpec) -> str:
     payload: dict[str, object] = {
         "Label": spec.label,
         "ProgramArguments": [str(argument) for argument in spec.program_arguments],
-        "StartCalendarInterval": {"Hour": spec.hour, "Minute": spec.minute},
         "RunAtLoad": spec.run_at_load,
     }
+    if spec.interval_seconds is not None:
+        payload["StartInterval"] = spec.interval_seconds
+    else:
+        payload["StartCalendarInterval"] = {"Hour": spec.hour, "Minute": spec.minute}
     if spec.working_directory is not None:
         payload["WorkingDirectory"] = str(spec.working_directory)
     if spec.standard_out_path is not None:
