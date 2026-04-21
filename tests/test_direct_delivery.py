@@ -15,10 +15,10 @@ HERMES_HISTORY_PATH = ROOT / "fixtures/hermes_history/sample_session.json"
 NOTES_PATH = ROOT / "fixtures/notes/sample_notes.md"
 DEFAULT_CODEX_MODEL = "gpt-5.4"
 DEFAULT_SUMMARY_FORMAT = "briefing-v1"
-EXPECTED_TITLE = ":sunny: *Hermes Pulse Morning Briefing*"
-EXPECTED_PRIMARY_HEADING = ":white_medium_small_square: 主要トピック"
-EXPECTED_SCHEDULE_HEADING = ":white_medium_small_square: 今日の予定・期限"
-EXPECTED_NOTES_HEADING = ":white_medium_small_square: 気になるメモ"
+EXPECTED_TITLE = "☀ *Hermes Pulse Morning Briefing*"
+EXPECTED_PRIMARY_HEADING = "▫ 主要トピック"
+EXPECTED_SCHEDULE_HEADING = "▫ 今日の予定・期限"
+EXPECTED_NOTES_HEADING = "▫ 気になるメモ"
 
 
 def test_post_canonical_digest_to_slack_reads_exact_canonical_artifact(tmp_path: Path) -> None:
