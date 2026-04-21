@@ -7,6 +7,16 @@ from typing import Any
 
 
 class ChatGPTExportPreparer:
+    def find_latest_export(self, input_dir: str | Path) -> Path:
+        candidates = [
+            path
+            for path in sorted(Path(input_dir).glob("*.zip"))
+            if path.is_file() and _looks_like_chatgpt_export_zip(path)
+        ]
+        if not candidates:
+            raise FileNotFoundError("No ChatGPT export zip found")
+        return max(candidates, key=lambda path: (path.stat().st_mtime, path.name))
+
     def prepare(self, input_path: str | Path, output_dir: str | Path) -> dict[str, Any]:
         source = Path(input_path)
         destination = Path(output_dir)
@@ -78,6 +88,12 @@ def _find_first_file(root: Path, filename: str) -> Path | None:
         if path.is_file():
             return path
     return None
+
+
+
+def _looks_like_chatgpt_export_zip(path: Path) -> bool:
+    name = path.name.lower()
+    return "openai-export" in name or "chatgpt" in name or "conversations__" in name
 
 
 

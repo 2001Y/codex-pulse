@@ -25,6 +25,7 @@ class DirectDeliveryWrapperSpec:
     feed_fixture: Path | None = None
     search_fixture: Path | None = None
     chatgpt_history: Path | None = None
+    chatgpt_export_dir: Path | None = None
     grok_history: Path | None = None
     hermes_history: Path | None = None
     notes: Path | None = None
@@ -124,7 +125,19 @@ def render_direct_delivery_wrapper(spec: DirectDeliveryWrapperSpec) -> str:
     working_directory = Path(spec.working_directory or repo_root)
     python_path_root = repo_root / "src"
     command = " ".join(shlex.quote(argument) for argument in build_direct_delivery_program_arguments(spec))
-    refresh_command = None
+    refresh_commands: list[str] = []
+    if spec.chatgpt_export_dir is not None and spec.chatgpt_history is not None:
+        refresh_chatgpt_args = [
+            str(spec.python_executable),
+            "-m",
+            "hermes_pulse.cli",
+            "refresh-chatgpt-history",
+            "--input-dir",
+            str(spec.chatgpt_export_dir),
+            "--output-dir",
+            str(spec.chatgpt_history),
+        ]
+        refresh_commands.append(" ".join(shlex.quote(argument) for argument in refresh_chatgpt_args))
     if spec.grok_history is not None:
         refresh_args = [
             str(spec.python_executable),
@@ -138,7 +151,7 @@ def render_direct_delivery_wrapper(spec: DirectDeliveryWrapperSpec) -> str:
             "--page-size",
             "100",
         ]
-        refresh_command = " ".join(shlex.quote(argument) for argument in refresh_args)
+        refresh_commands.append(" ".join(shlex.quote(argument) for argument in refresh_args))
     shared_env_path = spec.shared_env_path
     shared_env_reference = (
         f"~/{shared_env_path.relative_to(Path.home())}"
@@ -194,7 +207,7 @@ def render_direct_delivery_wrapper(spec: DirectDeliveryWrapperSpec) -> str:
             "fi",
             "",
             f"cd {shlex.quote(str(working_directory))}",
-            *(([refresh_command] if refresh_command is not None else [])),
+            *refresh_commands,
             f"exec {command}",
             "",
         ]

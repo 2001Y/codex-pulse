@@ -29,8 +29,10 @@
 
 ### A. History preservation / refresh
 - Grok live export refresh automation is implemented in-repo, but still depends on a live browser/CDP endpoint being available at runtime
-- ChatGPT では `prepare-chatgpt-history --input-file <OpenAI-export.zip> --output-dir <dir>` により、official export zip（nested zip 含む）を script-only で Pulse import 形式へ整形できるようになった
+- ChatGPT では `prepare-chatgpt-history --input-file <OpenAI-export.zip> --output-dir <dir>` に加え、`refresh-chatgpt-history --input-dir <dir> --output-dir <dir>` で最新 export zip 自動検知 + prepare ができるようになった
+- launchd wrapper でも ChatGPT refresh を Grok refresh より先に呼ぶ形へ更新済み
 - ただし ChatGPT export request 自体の発行・取得はまだ manual
+- live 実行では `/Users/akitani/Downloads/OpenAI-export.zip` を検知して import 更新に成功したが、現物 `conversations.json` は `0` 件だった
 - history connectors now persist and respect item-level watermarks for already-seen filtering, but broader export freshness orchestration is still unfinished
 
 ### B. Action execution / feedback

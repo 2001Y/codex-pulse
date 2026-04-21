@@ -1,4 +1,5 @@
 import json
+import os
 import zipfile
 from pathlib import Path
 
@@ -91,3 +92,60 @@ def test_prepare_chatgpt_history_command_invokes_preparer(monkeypatch, tmp_path:
     )
 
     assert calls == [{"input_path": input_path, "output_dir": output_dir}]
+
+
+def test_find_latest_chatgpt_export_prefers_newest_matching_zip(tmp_path: Path) -> None:
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    older = downloads / "OpenAI-export-old.zip"
+    newer = downloads / "OpenAI-export-new.zip"
+    ignored = downloads / "random.zip"
+    older.write_text("older")
+    newer.write_text("newer")
+    ignored.write_text("ignored")
+    os.utime(older, (1_700_000_000, 1_700_000_000))
+    os.utime(ignored, (1_700_000_100, 1_700_000_100))
+    os.utime(newer, (1_700_000_200, 1_700_000_200))
+
+    assert ChatGPTExportPreparer().find_latest_export(downloads) == newer
+
+
+def test_refresh_chatgpt_history_command_uses_latest_zip(monkeypatch, tmp_path: Path) -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakePreparer:
+        def find_latest_export(self, input_dir: str | Path) -> Path:
+            input_dir = Path(input_dir)
+            calls.append({"event": "find", "input_dir": input_dir})
+            return input_dir / "OpenAI-export-latest.zip"
+
+        def prepare(self, input_path: str | Path, output_dir: str | Path) -> dict[str, object]:
+            input_path = Path(input_path)
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "manifest.json").write_text("{}")
+            calls.append({"event": "prepare", "input_path": input_path, "output_dir": output_dir})
+            return {"conversation_count": 1}
+
+    monkeypatch.setattr(hermes_pulse.cli, "ChatGPTExportPreparer", lambda: FakePreparer())
+    input_dir = tmp_path / "downloads"
+    input_dir.mkdir()
+    output_dir = tmp_path / "prepared"
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "refresh-chatgpt-history",
+                "--input-dir",
+                str(input_dir),
+                "--output-dir",
+                str(output_dir),
+            ]
+        )
+        == 0
+    )
+
+    assert calls == [
+        {"event": "find", "input_dir": input_dir},
+        {"event": "prepare", "input_path": input_dir / "OpenAI-export-latest.zip", "output_dir": output_dir},
+    ]

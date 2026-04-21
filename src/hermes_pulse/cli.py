@@ -99,6 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
             "expire-suppression",
             "supersede-suppression",
             "refresh-grok-history",
+            "refresh-chatgpt-history",
             "prepare-chatgpt-history",
             "state-summary",
         ),
@@ -116,6 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--notes", type=Path)
     parser.add_argument("--archive-root", type=Path)
     parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--input-dir", type=Path)
     parser.add_argument("--input-file", type=Path)
     parser.add_argument("--cdp-port", type=int, default=9223)
     parser.add_argument("--page-size", type=int, default=100)
@@ -171,6 +173,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.output_dir is None:
             raise ValueError("refresh-grok-history requires --output-dir")
         GrokBrowserExporter(cdp_port=args.cdp_port).export(args.output_dir, page_size=args.page_size)
+        return 0
+    if args.command == "refresh-chatgpt-history":
+        if args.input_dir is None or args.output_dir is None:
+            raise ValueError("refresh-chatgpt-history requires --input-dir and --output-dir")
+        preparer = ChatGPTExportPreparer()
+        latest_export = preparer.find_latest_export(args.input_dir)
+        preparer.prepare(latest_export, args.output_dir)
         return 0
     if args.command == "prepare-chatgpt-history":
         if args.input_file is None or args.output_dir is None:

@@ -25,6 +25,7 @@ def test_render_direct_delivery_wrapper_targets_module_with_channel_thread_and_a
         thread_ts="1712345.6789",
         archive_root=Path("/Users/akitani/Pulse Archive"),
         chatgpt_history=Path("/Users/akitani/Pulse/Imports/chatgpt"),
+        chatgpt_export_dir=Path("/Users/akitani/Downloads"),
         grok_history=Path("/Users/akitani/Pulse/Imports/grok/browser-export"),
         x_signals="bookmarks,likes,home_timeline_reverse_chronological",
         codex_model="gpt-5.4",
@@ -46,6 +47,7 @@ def test_render_direct_delivery_wrapper_targets_module_with_channel_thread_and_a
     assert 'X_OAUTH2_EXPIRATION_TIME' in wrapper
     assert 'oauth2_tokens' in wrapper
     assert 'default_user' in wrapper
+    assert '/opt/homebrew/bin/python3 -m hermes_pulse.cli refresh-chatgpt-history --input-dir /Users/akitani/Downloads --output-dir /Users/akitani/Pulse/Imports/chatgpt' in wrapper
     assert "/opt/homebrew/bin/python3" in wrapper
 
     exec_line = next(line for line in wrapper.splitlines() if line.startswith("exec "))
@@ -178,6 +180,7 @@ def test_generate_launchd_artifacts_writes_wrapper_and_plist_to_output_directory
             channel="C123456",
             archive_root=Path("/Users/akitani/Pulse"),
             chatgpt_history=Path("/Users/akitani/Pulse/Imports/chatgpt"),
+            chatgpt_export_dir=Path("/Users/akitani/Downloads"),
             grok_history=Path("/Users/akitani/Pulse/Imports/grok/browser-export"),
             x_signals="bookmarks,likes",
             codex_model="gpt-5.4",
@@ -200,6 +203,17 @@ def test_generate_launchd_artifacts_writes_wrapper_and_plist_to_output_directory
     assert artifacts.wrapper_path.stat().st_mode & 0o111
 
     wrapper = artifacts.wrapper_path.read_text()
+    refresh_chatgpt_line = next(line for line in wrapper.splitlines() if "refresh-chatgpt-history" in line)
+    assert shlex.split(refresh_chatgpt_line) == [
+        "/opt/homebrew/bin/python3",
+        "-m",
+        "hermes_pulse.cli",
+        "refresh-chatgpt-history",
+        "--input-dir",
+        "/Users/akitani/Downloads",
+        "--output-dir",
+        "/Users/akitani/Pulse/Imports/chatgpt",
+    ]
     exec_line = next(line for line in wrapper.splitlines() if line.startswith("exec "))
     assert shlex.split(exec_line.removeprefix("exec ")) == [
         "/opt/homebrew/bin/python3",
