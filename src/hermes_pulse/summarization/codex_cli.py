@@ -12,6 +12,7 @@ from hermes_pulse.summarization.base import (
 
 DEFAULT_CODEX_MODEL = "gpt-5.4"
 DEFAULT_SUMMARY_FORMAT = "briefing-v1"
+MAX_PROMPT_RAW_ITEMS = 200
 
 
 class CodexCliSummarizer:
@@ -75,7 +76,7 @@ def build_codex_digest_prompt(
     *,
     summary_format: str = DEFAULT_SUMMARY_FORMAT,
 ) -> str:
-    compact_raw_items = _compact_raw_items_for_prompt(raw_items)
+    compact_raw_items, raw_item_counts = _compact_raw_items_for_prompt(raw_items)
     lines = [
         "あなたは Hermes Pulse の要約担当です。",
         "以下の archive directory から canonical digest を作成してください。",
@@ -84,10 +85,16 @@ def build_codex_digest_prompt(
         "補助的に既存の summary markdown があれば参照してよいですが、raw JSON と矛盾する場合は raw JSON を優先してください。",
         "本文中のリンクは可能な限り保持し、URL を壊さないでください。",
         "不明な点は断定せず、与えられた情報だけで簡潔に要約してください。",
+        "raw/collected-items.json の全文は archive directory 内に残っている前提です。埋め込み JSON は要約用の抜粋なので、必要なら件数メタデータを踏まえて偏りに注意してください。",
         "",
         *build_summary_format_instructions(summary_format),
         "",
         f"archive_directory: {archive_directory}",
+        "",
+        "## raw item counts",
+        "```json",
+        json.dumps(raw_item_counts, ensure_ascii=False, indent=2),
+        "```",
         "",
         "## Primary grounding: raw/collected-items.json",
         "```json",
@@ -135,10 +142,10 @@ def _existing_summary_markdown(archive_directory: Path) -> list[tuple[Path, str]
     return markdown_files
 
 
-def _compact_raw_items_for_prompt(raw_items: str) -> str:
+def _compact_raw_items_for_prompt(raw_items: str) -> tuple[str, dict[str, int]]:
     items = json.loads(raw_items)
     compact_items: list[dict[str, object]] = []
-    for item in items:
+    for item in items[:MAX_PROMPT_RAW_ITEMS]:
         timestamps = item.get("timestamps") or {}
         provenance = item.get("provenance") or {}
         compact_items.append(
@@ -165,7 +172,12 @@ def _compact_raw_items_for_prompt(raw_items: str) -> str:
                 },
             }
         )
-    return json.dumps(compact_items, ensure_ascii=False, indent=2) + "\n"
+    raw_item_counts = {
+        "total_items": len(items),
+        "included_in_prompt": len(compact_items),
+        "omitted_from_prompt": max(len(items) - len(compact_items), 0),
+    }
+    return json.dumps(compact_items, ensure_ascii=False, indent=2) + "\n", raw_item_counts
 
 
 def _truncate_text(value: object, *, max_length: int = 160) -> str | None:

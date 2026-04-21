@@ -47,7 +47,10 @@ def test_render_direct_delivery_wrapper_targets_module_with_channel_thread_and_a
     assert 'X_OAUTH2_EXPIRATION_TIME' in wrapper
     assert 'oauth2_tokens' in wrapper
     assert 'default_user' in wrapper
-    assert '/opt/homebrew/bin/python3 -m hermes_pulse.cli refresh-chatgpt-history --input-dir /Users/akitani/Downloads --output-dir /Users/akitani/Pulse/Imports/chatgpt' in wrapper
+    assert 'if ! /opt/homebrew/bin/python3 -m hermes_pulse.cli refresh-chatgpt-history --input-dir /Users/akitani/Downloads --output-dir /Users/akitani/Pulse/Imports/chatgpt; then' in wrapper
+    assert 'echo "warning: chatgpt history refresh failed; continuing with existing import" >&2' in wrapper
+    assert 'if ! /opt/homebrew/bin/python3 -m hermes_pulse.cli refresh-grok-history --output-dir /Users/akitani/Pulse/Imports/grok/browser-export --cdp-port 9223 --page-size 100; then' in wrapper
+    assert 'echo "warning: grok history refresh failed; continuing with existing import" >&2' in wrapper
     assert "/opt/homebrew/bin/python3" in wrapper
 
     exec_line = next(line for line in wrapper.splitlines() if line.startswith("exec "))
@@ -204,7 +207,7 @@ def test_generate_launchd_artifacts_writes_wrapper_and_plist_to_output_directory
 
     wrapper = artifacts.wrapper_path.read_text()
     refresh_chatgpt_line = next(line for line in wrapper.splitlines() if "refresh-chatgpt-history" in line)
-    assert shlex.split(refresh_chatgpt_line) == [
+    assert shlex.split(refresh_chatgpt_line.removeprefix("if ! ").removesuffix("; then")) == [
         "/opt/homebrew/bin/python3",
         "-m",
         "hermes_pulse.cli",

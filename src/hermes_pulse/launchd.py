@@ -120,6 +120,16 @@ def build_direct_delivery_program_arguments(spec: DirectDeliveryWrapperSpec) -> 
     return args
 
 
+def _render_optional_refresh_command(command: str, *, warning_message: str) -> str:
+    return "\n".join(
+        [
+            f"if ! {command}; then",
+            f'  echo "{warning_message}" >&2',
+            "fi",
+        ]
+    )
+
+
 def render_direct_delivery_wrapper(spec: DirectDeliveryWrapperSpec) -> str:
     repo_root = Path(spec.repo_root)
     working_directory = Path(spec.working_directory or repo_root)
@@ -137,7 +147,13 @@ def render_direct_delivery_wrapper(spec: DirectDeliveryWrapperSpec) -> str:
             "--output-dir",
             str(spec.chatgpt_history),
         ]
-        refresh_commands.append(" ".join(shlex.quote(argument) for argument in refresh_chatgpt_args))
+        refresh_chatgpt_command = " ".join(shlex.quote(argument) for argument in refresh_chatgpt_args)
+        refresh_commands.append(
+            _render_optional_refresh_command(
+                refresh_chatgpt_command,
+                warning_message="warning: chatgpt history refresh failed; continuing with existing import",
+            )
+        )
     if spec.grok_history is not None:
         refresh_args = [
             str(spec.python_executable),
@@ -151,7 +167,13 @@ def render_direct_delivery_wrapper(spec: DirectDeliveryWrapperSpec) -> str:
             "--page-size",
             "100",
         ]
-        refresh_commands.append(" ".join(shlex.quote(argument) for argument in refresh_args))
+        refresh_command = " ".join(shlex.quote(argument) for argument in refresh_args)
+        refresh_commands.append(
+            _render_optional_refresh_command(
+                refresh_command,
+                warning_message="warning: grok history refresh failed; continuing with existing import",
+            )
+        )
     shared_env_path = spec.shared_env_path
     shared_env_reference = (
         f"~/{shared_env_path.relative_to(Path.home())}"

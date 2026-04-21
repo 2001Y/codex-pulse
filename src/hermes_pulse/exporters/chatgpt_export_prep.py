@@ -67,6 +67,7 @@ class ChatGPTExportPreparer:
         if not isinstance(conversations, list):
             raise ValueError("ChatGPT conversations export must be a list")
         account = _extract_account(extracted_dir / "user.json")
+        export_manifest = _read_optional_json(extracted_dir / "export_manifest.json")
         manifest = {
             "provider": "chatgpt",
             "acquisition_mode": "official_export",
@@ -74,6 +75,7 @@ class ChatGPTExportPreparer:
             "conversation_count": len(conversations),
             "account": account,
             "source_path": str(source),
+            "export_manifest": export_manifest,
         }
         (destination / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
         return manifest
@@ -139,3 +141,10 @@ def _extract_account(user_path: Path) -> str | None:
         return None
     email = payload.get("email")
     return email if isinstance(email, str) and email else None
+
+
+
+def _read_optional_json(path: Path) -> Any | None:
+    if not path.exists():
+        return None
+    return json.loads(path.read_text())

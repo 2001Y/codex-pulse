@@ -57,6 +57,7 @@ def test_chatgpt_export_preparer_extracts_nested_zip_and_writes_manifest(tmp_pat
     assert manifest["acquisition_mode"] == "official_export"
     assert manifest["conversation_count"] == 1
     assert manifest["account"] == "mail+chatgpt@tam.nz"
+    assert manifest["export_manifest"] == {"export_id": "exp-1"}
     assert result["conversation_count"] == 1
     assert ChatGPTHistoryConnector().collect(output_dir)[0].id == "chatcmpl-conv-1"
 

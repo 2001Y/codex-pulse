@@ -34,6 +34,7 @@
 - latest export が `0` conversations でも、既存の non-empty import を空 payload で上書きしない保護を追加した
 - ただし ChatGPT export request 自体の発行・取得はまだ manual
 - live 実行では `/Users/akitani/Downloads/OpenAI-export.zip` を検知して import 更新に成功したが、現物 `conversations.json` は `0` 件だった
+- prepared manifest には `export_manifest.json` 由来の診断メタデータも保存するようにし、少なくとも現 export では `conversations.json size_bytes = 2`（実体 `[]`）であることを確認できるようにした
 - history connectors now persist and respect item-level watermarks for already-seen filtering, but broader export freshness orchestration is still unfinished
 
 ### B. Action execution / feedback
