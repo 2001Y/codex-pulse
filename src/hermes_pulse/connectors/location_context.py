@@ -254,6 +254,7 @@ def _detect_dwell_payload(
                 }
 
     cluster = [latest]
+    latest_accuracy = _normalized_accuracy_m(latest.get("accuracy"))
     for point in points[1:]:
         distance = _haversine_m(
             float(latest["lat"]),
@@ -261,13 +262,22 @@ def _detect_dwell_payload(
             float(point["lat"]),
             float(point["lon"]),
         )
-        if distance > dwell_radius_m:
+        if distance > _stationary_cluster_threshold_m(
+            dwell_radius_m=dwell_radius_m,
+            latest_accuracy_m=latest_accuracy,
+            point_accuracy_m=_normalized_accuracy_m(point.get("accuracy")),
+        ):
             break
         cluster.append(point)
 
     earliest = cluster[-1]
     dwell_minutes = int((int(latest["timestamp"]) - int(earliest["timestamp"])) / 60)
-    if dwell_minutes < min_dwell_minutes:
+    minimum_stationary_minutes = _minimum_stationary_dwell_minutes(
+        min_dwell_minutes=min_dwell_minutes,
+        latest_accuracy_m=latest_accuracy,
+        cluster=cluster,
+    )
+    if dwell_minutes < minimum_stationary_minutes:
         return None
 
     local_dt = latest_dt.astimezone(JST)
@@ -293,6 +303,43 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     d_lambda = math.radians(lon2 - lon1)
     a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
     return 2 * radius * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _normalized_accuracy_m(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        accuracy = float(value)
+    except (TypeError, ValueError):
+        return None
+    if accuracy <= 0:
+        return None
+    return accuracy
+
+
+def _stationary_cluster_threshold_m(
+    *,
+    dwell_radius_m: float,
+    latest_accuracy_m: float | None,
+    point_accuracy_m: float | None,
+) -> float:
+    threshold = dwell_radius_m
+    if latest_accuracy_m is None or point_accuracy_m is None:
+        return threshold
+    if max(latest_accuracy_m, point_accuracy_m) < 250:
+        return threshold
+    return max(threshold, 1.5 * (latest_accuracy_m + point_accuracy_m + dwell_radius_m))
+
+
+def _minimum_stationary_dwell_minutes(
+    *,
+    min_dwell_minutes: int,
+    latest_accuracy_m: float | None,
+    cluster: list[dict[str, float | int | None]],
+) -> int:
+    if latest_accuracy_m is None or latest_accuracy_m < 250 or len(cluster) < 3:
+        return min_dwell_minutes
+    return min(min_dwell_minutes, 10)
 
 
 def _infer_runtime_reason(local_dt: datetime) -> str:

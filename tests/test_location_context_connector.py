@@ -88,3 +88,21 @@ def test_detect_dwell_payload_returns_no_candidate_for_fast_points() -> None:
     )
 
     assert payload is None
+
+
+def test_detect_dwell_payload_returns_stationary_candidate_for_coarse_accuracy_points() -> None:
+    payload = location_context_module._detect_dwell_payload(
+        [
+            {"timestamp": 1_776_779_927, "lat": 35.60626071783384, "lon": 139.68194760631002, "accuracy": 1000.0, "velocity": None},
+            {"timestamp": 1_776_779_627, "lat": 35.61674581692452, "lon": 139.70024427909397, "accuracy": 1199.0, "velocity": None},
+            {"timestamp": 1_776_779_266, "lat": 35.63153827396869, "lon": 139.71627507321068, "accuracy": 2000.0, "velocity": None},
+        ],
+        now=datetime.fromtimestamp(1_776_779_927, tz=timezone.utc),
+        dwell_radius_m=80.0,
+        min_dwell_minutes=15,
+        max_staleness_minutes=90,
+    )
+
+    assert payload is not None
+    assert payload["detected_reason"] == "stopped_moving"
+    assert payload["dwell_minutes"] >= 10
