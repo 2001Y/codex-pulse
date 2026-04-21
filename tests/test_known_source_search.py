@@ -84,3 +84,27 @@ def test_known_source_search_connector_builds_site_scoped_query_and_skips_non_se
     assert parsed.netloc == "html.duckduckgo.com"
     assert parsed.path == "/html/"
     assert parse_qs(parsed.query)["q"] == ["site:discover.example.net rumors supply chain"]
+
+
+def test_known_source_search_connector_does_not_duplicate_site_scope_when_hint_already_contains_site() -> None:
+    requested_urls: list[str] = []
+
+    def fetcher(url: str) -> str:
+        requested_urls.append(url)
+        return FIXTURE_HTML
+
+    entry = SourceRegistryEntry(
+        id="anthropic-newsroom",
+        source_family="official_lab_news",
+        domain="anthropic.com",
+        title="Anthropic Newsroom",
+        acquisition_mode="known_source_search",
+        authority_tier="primary",
+        search_hints=["site:anthropic.com/news Anthropic announcement"],
+    )
+
+    items = KnownSourceSearchConnector(fetcher=fetcher).collect([entry])
+
+    assert len(items) == 0
+    parsed = urlparse(requested_urls[0])
+    assert parse_qs(parsed.query)["q"] == ["site:anthropic.com/news Anthropic announcement"]

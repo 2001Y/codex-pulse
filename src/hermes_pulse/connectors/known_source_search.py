@@ -140,8 +140,11 @@ class _DuckDuckGoHTMLParser(HTMLParser):
 
 
 def _build_search_query(entry: SourceRegistryEntry) -> str:
+    hints = [hint.strip() for hint in entry.search_hints if hint.strip()]
+    if any(hint.startswith("site:") for hint in hints):
+        return " ".join(hints)
     parts = [f"site:{entry.domain}"]
-    parts.extend(hint.strip() for hint in entry.search_hints if hint.strip())
+    parts.extend(hints)
     return " ".join(parts)
 
 
