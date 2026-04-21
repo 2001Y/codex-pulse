@@ -166,7 +166,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     delivery_succeeded = False
-    pending_connector_cursor_update: tuple[list[CollectedItem], list[str], str] | None = None
+    pending_connector_cursor_update: tuple[list[CollectedItem], list[str], list[str], str] | None = None
     pending_local_connector_health_update: tuple[dict[str, str], set[str], list[CollectedItem], str] | None = None
     pending_source_registry_state_update: tuple[list[SourceRegistryEntry], list[CollectedItem], str, dict[str, str], set[str]] | None = None
     pending_suppression_update: tuple[list[CollectedItem], str, str, str, int | None] | None = None
@@ -189,6 +189,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 pending_connector_cursor_update = (
                     items,
                     _parse_x_signal_types(getattr(args, "x_signals", None)),
+                    _requested_history_connectors(args),
                     occurred_at,
                 )
                 pending_source_registry_state_update = (
@@ -322,12 +323,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
 
         if args.state_db is not None and pending_connector_cursor_update is not None:
-            items, x_signal_types, occurred_at = pending_connector_cursor_update
+            items, x_signal_types, history_connectors, occurred_at = pending_connector_cursor_update
             _record_connector_cursors_from_items(
                 args.state_db,
                 items=items,
                 occurred_at=occurred_at,
                 x_signal_types=x_signal_types,
+                history_connectors=history_connectors,
             )
     except Exception:
         if args.state_db is not None and run_id is not None:
@@ -402,6 +404,15 @@ def _x_source_for_signal_type(signal_type: str) -> str:
     }[signal_type]
 
 
+def _requested_history_connectors(args: argparse.Namespace) -> list[str]:
+    connectors: list[str] = []
+    if getattr(args, "chatgpt_history", None) is not None:
+        connectors.append("chatgpt_history")
+    if getattr(args, "grok_history", None) is not None:
+        connectors.append("grok_history")
+    return connectors
+
+
 def _collect_x_signals_with_error_capture(
     signal_types: list[str],
     *,
@@ -429,10 +440,13 @@ def _record_connector_cursors_from_items(
     items: list[CollectedItem],
     occurred_at: str,
     x_signal_types: list[str],
+    history_connectors: list[str],
 ) -> None:
     top_cursors: dict[str, str | None] = {
         _x_source_for_signal_type(signal_type): None for signal_type in x_signal_types
     }
+    for connector_id in history_connectors:
+        top_cursors.setdefault(connector_id, None)
     for item in items:
         if item.source not in top_cursors:
             continue

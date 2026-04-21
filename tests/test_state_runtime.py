@@ -14,6 +14,8 @@ from hermes_pulse.summarization.base import SummaryArtifact
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_REGISTRY_PATH = ROOT / "fixtures/source_registry/sample_sources.yaml"
 HERMES_HISTORY_PATH = ROOT / "fixtures/hermes_history/sample_session.json"
+CHATGPT_HISTORY_PATH = ROOT / "fixtures/chatgpt_history/sample_export"
+GROK_HISTORY_PATH = ROOT / "fixtures/grok_history/sample_export"
 NOTES_PATH = ROOT / "fixtures/notes/sample_notes.md"
 CALENDAR_FIXTURE = ROOT / "fixtures/google_workspace/calendar_leave_now_events.json"
 AUDIT_FIXTURE = ROOT / "fixtures/audit/trigger_quality.json"
@@ -2221,6 +2223,101 @@ def test_empty_x_signal_poll_preserves_existing_cursor(monkeypatch, tmp_path: Pa
         ).fetchone()
 
     assert cursor == ("x_bookmarks", "200", "2026-04-20T09:10:00Z", "2026-04-20T09:10:00Z")
+
+
+def test_morning_digest_records_chatgpt_and_grok_history_connector_cursors(monkeypatch, tmp_path: Path) -> None:
+    _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
+    database_path = tmp_path / "state" / "hermes-pulse.db"
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--chatgpt-history",
+                str(CHATGPT_HISTORY_PATH),
+                "--grok-history",
+                str(GROK_HISTORY_PATH),
+                "--state-db",
+                str(database_path),
+                "--now",
+                "2026-04-20T10:00:00Z",
+            ]
+        )
+        == 0
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        cursors = connection.execute(
+            "SELECT connector_id, cursor, last_poll_at, last_success_at FROM connector_cursors WHERE connector_id IN ('chatgpt_history', 'grok_history') ORDER BY connector_id"
+        ).fetchall()
+
+    assert cursors == [
+        ("chatgpt_history", "chatcmpl-conv-1", "2026-04-20T10:00:00Z", "2026-04-20T10:00:00Z"),
+        ("grok_history", "conv-1", "2026-04-20T10:00:00Z", "2026-04-20T10:00:00Z"),
+    ]
+
+
+def test_empty_chatgpt_history_poll_preserves_existing_cursor(monkeypatch, tmp_path: Path) -> None:
+    _install_stub_codex_summarizer(monkeypatch, template="# Codex Digest\n\n- Canonical summary\n")
+    database_path = tmp_path / "state" / "hermes-pulse.db"
+    empty_export = tmp_path / "chatgpt-empty"
+    (empty_export / "extracted" / "conversations").mkdir(parents=True)
+    (empty_export / "manifest.json").write_text(
+        json.dumps(
+            {
+                "provider": "chatgpt",
+                "account": "mail+chatgpt@tam.nz",
+                "acquisition_mode": "official_export",
+            }
+        )
+    )
+    (empty_export / "extracted" / "conversations" / "conversations.json").write_text("[]")
+    (empty_export / "extracted" / "conversations" / "user.json").write_text(
+        json.dumps({"email": "mail+chatgpt@tam.nz"})
+    )
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--chatgpt-history",
+                str(CHATGPT_HISTORY_PATH),
+                "--state-db",
+                str(database_path),
+                "--now",
+                "2026-04-20T10:05:00Z",
+            ]
+        )
+        == 0
+    )
+
+    assert (
+        hermes_pulse.cli.main(
+            [
+                "morning-digest",
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--chatgpt-history",
+                str(empty_export),
+                "--state-db",
+                str(database_path),
+                "--now",
+                "2026-04-20T10:10:00Z",
+            ]
+        )
+        == 0
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        cursor = connection.execute(
+            "SELECT connector_id, cursor, last_poll_at, last_success_at FROM connector_cursors WHERE connector_id = 'chatgpt_history'"
+        ).fetchone()
+
+    assert cursor == ("chatgpt_history", "chatcmpl-conv-1", "2026-04-20T10:10:00Z", "2026-04-20T10:10:00Z")
 
 
 def test_failed_digest_does_not_advance_x_signal_cursor(monkeypatch, tmp_path: Path) -> None:
