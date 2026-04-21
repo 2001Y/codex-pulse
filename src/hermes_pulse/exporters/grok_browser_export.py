@@ -103,9 +103,9 @@ class AgentBrowserGrokRunner:
         if page_token:
             query += f"&pageToken={json.dumps(page_token)[1:-1]}"
         js = (
-            "return fetch('https://grok.com/rest/app-chat/conversations"
+            "fetch('https://grok.com/rest/app-chat/conversations"
             + query
-            + "', {credentials: 'include'}).then(async (res) => ({status: res.status, body: await res.json()}));"
+            + "', {credentials: 'include'}).then(async (res) => ({status: res.status, body: await res.json()}))"
         )
         payload = self._eval_json(js)
         return _unwrap_agent_browser_payload(payload)
@@ -113,8 +113,8 @@ class AgentBrowserGrokRunner:
     def fetch_responses(self, conversation_id: str) -> dict[str, Any]:
         quoted_id = json.dumps(conversation_id)
         js = (
-            f"return fetch('https://grok.com/rest/app-chat/conversations/' + {quoted_id} + '/responses', "
-            "{credentials: 'include'}).then(async (res) => ({status: res.status, body: await res.json()}));"
+            f"fetch('https://grok.com/rest/app-chat/conversations/' + {quoted_id} + '/responses', "
+            "{credentials: 'include'}).then(async (res) => ({status: res.status, body: await res.json()}))"
         )
         payload = self._eval_json(js)
         return _unwrap_agent_browser_payload(payload)
@@ -150,6 +150,13 @@ def _unwrap_agent_browser_payload(payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(body, dict):
             raise ValueError("Grok browser export body must be an object")
         return body
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if isinstance(data, dict):
+        if "status" in data and "body" in data:
+            return _unwrap_agent_browser_payload(data)
+        result = data.get("result")
+        if isinstance(result, dict):
+            return _unwrap_agent_browser_payload(result)
     result = payload.get("result") if isinstance(payload, dict) else None
     if isinstance(result, dict) and "status" in result and "body" in result:
         return _unwrap_agent_browser_payload(result)
