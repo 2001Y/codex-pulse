@@ -29,6 +29,7 @@
 
 ### A. History preservation / refresh
 - Grok live export refresh automation is implemented in-repo, but still depends on a live browser/CDP endpoint being available at runtime
+- ただし script-only fallback として `refresh-grok-history-fallback --history-db <Chrome History> --output-dir <dir>` を追加し、Chrome History から canonical conversation URL / title / modifyTime を保全できるようにした
 - ChatGPT では `prepare-chatgpt-history --input-file <OpenAI-export.zip> --output-dir <dir>` に加え、`refresh-chatgpt-history --input-dir <dir> --output-dir <dir>` で最新 export zip 自動検知 + prepare ができるようになった
 - launchd wrapper でも ChatGPT refresh を Grok refresh より先に呼ぶ形へ更新済み
 - latest export が `0` conversations でも、既存の non-empty import を空 payload で上書きしない保護を追加した
@@ -45,7 +46,9 @@
 ### C. History export / launchd operational verification
 - live `xurl` OAuth2 verification succeeded via `/2/users/me`
 - launchd wrapper/plist wiring for the morning digest exists and includes ChatGPT/Grok/X optional inputs
-- current blocker observed live: Grok refresh fails when CDP port `9223` is not available, and `ai.hermes.pulse.morning-digest` currently shows `last exit code = 1`
+- current blocker observed live: browser-based Grok refresh は CDP port `9223` がないと失敗する
+- その一方で script-only fallback は live に `/Users/akitani/Library/Application Support/Google/Chrome/Profile 4/History` から 176 conversation の canonical URL / title を保存できた
+- `ai.hermes.pulse.morning-digest` の `last exit code = 1` は、少なくとも one-shot root cause としては prompt 肥大による Codex summary 失敗を解消済み
 
 ### D. Repository hygiene
 - push local `main` commit to origin

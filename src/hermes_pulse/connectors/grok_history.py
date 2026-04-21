@@ -11,6 +11,9 @@ class GrokHistoryConnector:
     def collect(self, path: str | Path) -> list[CollectedItem]:
         base = Path(path)
         payload = json.loads((base / "conversations.index.json").read_text())
+        manifest_path = base / "manifest.json"
+        manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+        acquisition_mode = str(manifest.get("acquisition_mode") or "browser_automation_experimental")
         conversations = payload.get("conversations", [])
         items: list[CollectedItem] = []
         for conversation in conversations:
@@ -46,7 +49,7 @@ class GrokHistoryConnector:
                     ),
                     provenance=Provenance(
                         provider="grok",
-                        acquisition_mode="browser_automation_experimental",
+                        acquisition_mode=acquisition_mode,
                         raw_record_id=conversation_id,
                     ),
                     metadata={
