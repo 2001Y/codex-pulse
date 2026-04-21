@@ -1,4 +1,6 @@
 import json
+import os
+import shutil
 import subprocess
 import time
 from collections.abc import Callable
@@ -97,8 +99,11 @@ class AgentBrowserGrokRunner:
     def __init__(self, *, cdp_port: int = 9223, command_runner: Callable[[list[str]], str] | None = None) -> None:
         self._cdp_port = cdp_port
         self._command_runner = command_runner or _run_agent_browser_json
+        self._text_command_runner: Callable[[list[str]], str] = _run_agent_browser_text
+        self._tab_prepared = False
 
     def fetch_conversations(self, *, page_size: int, page_token: str | None = None) -> dict[str, Any]:
+        self._ensure_grok_tab()
         query = f"?pageSize={int(page_size)}"
         if page_token:
             query += f"&pageToken={json.dumps(page_token)[1:-1]}"
@@ -122,7 +127,7 @@ class AgentBrowserGrokRunner:
     def _eval_json(self, js: str) -> dict[str, Any]:
         return json.loads(
             self._command_runner([
-                "agent-browser",
+                _resolve_agent_browser_executable(),
                 "--cdp",
                 str(self._cdp_port),
                 "eval",
@@ -130,6 +135,23 @@ class AgentBrowserGrokRunner:
                 "--json",
             ])
         )
+
+    def _ensure_grok_tab(self) -> None:
+        if self._tab_prepared:
+            return
+        executable = _resolve_agent_browser_executable()
+        listing = self._text_command_runner([executable, "--cdp", str(self._cdp_port), "tab", "list"])
+        for line in listing.splitlines():
+            if "https://grok.com/" not in line:
+                continue
+            prefix = line.split("]", 1)[0]
+            index = prefix.split("[")[-1].replace("→", "").strip()
+            if index:
+                self._text_command_runner([executable, "--cdp", str(self._cdp_port), "tab", index])
+                self._tab_prepared = True
+                return
+        self._text_command_runner([executable, "--cdp", str(self._cdp_port), "open", "https://grok.com/"])
+        self._tab_prepared = True
 
 
 class GrokBrowserRunner:
@@ -140,6 +162,28 @@ class GrokBrowserRunner:
 def _run_agent_browser_json(command: list[str]) -> str:
     result = subprocess.run(command, check=True, capture_output=True, text=True)
     return result.stdout
+
+
+def _run_agent_browser_text(command: list[str]) -> str:
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    return result.stdout
+
+
+def _resolve_agent_browser_executable() -> str:
+    env_override = os.environ.get("AGENT_BROWSER_BIN")
+    if env_override:
+        return env_override
+    discovered = shutil.which("agent-browser")
+    if discovered:
+        return discovered
+    candidates = [
+        str(Path.home() / ".local" / "bin" / "agent-browser"),
+        str(Path.home() / ".hermes" / "hermes-agent" / ".worktrees" / "local-dev-runtime" / "node_modules" / ".bin" / "agent-browser"),
+    ]
+    for candidate in candidates:
+        if Path(candidate).exists():
+            return candidate
+    raise FileNotFoundError("agent-browser executable not found")
 
 
 def _unwrap_agent_browser_payload(payload: dict[str, Any]) -> dict[str, Any]:
