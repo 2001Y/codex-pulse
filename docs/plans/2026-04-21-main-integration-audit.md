@@ -28,19 +28,19 @@
 ## Session-derived unfinished work buckets
 
 ### A. History preservation / refresh
-- Grok live export refresh automation is not fully implemented end-to-end
-- ChatGPT export acquisition automation is not implemented
-- strict source-level cursor/watermark diffing for `grok_history` / `chatgpt_history` remains unfinished
+- Grok live export refresh automation is implemented in-repo, but still depends on a live browser/CDP endpoint being available at runtime
+- ChatGPT export acquisition / refresh is still manual
+- history connectors now persist and respect item-level watermarks for already-seen filtering, but broader export freshness orchestration is still unfinished
 
 ### B. Action execution / feedback
-- suppression lifecycle is implemented through dismiss / expire / supersede flows, but higher-level analytics/reporting over `feedback_log` is still minimal
-- approval action execution details are persisted, but downstream summary/report surfaces for those signals are still not built
+- `state-summary` now surfaces connector cursors, recent approval actions, and aggregated feedback totals from the SQLite state DB
+- higher-level analytics/reporting over `feedback_log` is still minimal beyond that CLI surface
+- approval action execution details are persisted and rendered in `state-summary`, but downstream UI/report destinations are still not built
 
 ### C. History export / launchd operational verification
-- Grok browser-export refresh has repo support, but live authenticated browser/CDP verification remains an operational follow-up
-- ChatGPT history ingestion is artifact-based; export acquisition/refresh is still manual
-- live `xurl` OAuth2 verification remains separate from local test coverage
-- launchd runtime verification for all current optional inputs should be rechecked after pushing `main`
+- live `xurl` OAuth2 verification succeeded via `/2/users/me`
+- launchd wrapper/plist wiring for the morning digest exists and includes ChatGPT/Grok/X optional inputs
+- current blocker observed live: Grok refresh fails when CDP port `9223` is not available, and `ai.hermes.pulse.morning-digest` currently shows `last exit code = 1`
 
 ### D. Repository hygiene
 - push local `main` commit to origin
