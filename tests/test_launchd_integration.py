@@ -33,6 +33,10 @@ def test_render_direct_delivery_wrapper_targets_module_with_channel_thread_and_a
     assert wrapper.startswith("#!/bin/zsh\nset -euo pipefail\n")
     assert f"cd {shlex.quote(str(REPO_ROOT))}" in wrapper
     assert str(REPO_ROOT / "src") in wrapper
+    assert "source ~/.config/env/shared.env" in wrapper
+    assert 'xurl auth apps add default --client-id "$X_CLIENT_ID" --client-secret "$X_CLIENT_SECRET"' in wrapper
+    assert 'xurl auth apps update default --client-id "$X_CLIENT_ID" --client-secret "$X_CLIENT_SECRET"' in wrapper
+    assert 'xurl auth default default' in wrapper
 
     exec_line = next(line for line in wrapper.splitlines() if line.startswith("exec "))
     assert shlex.split(exec_line.removeprefix("exec ")) == [

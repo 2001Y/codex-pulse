@@ -10,6 +10,8 @@ from hermes_pulse.summarization.codex_cli import DEFAULT_CODEX_MODEL, DEFAULT_SU
 
 DEFAULT_LAUNCHD_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 DEFAULT_WRAPPER_FILENAME = "run-hermes-pulse-direct-delivery.sh"
+DEFAULT_SHARED_ENV_PATH = Path("~/.config/env/shared.env").expanduser()
+DEFAULT_XURL_APP_NAME = "default"
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,8 @@ class DirectDeliveryWrapperSpec:
     codex_model: str = DEFAULT_CODEX_MODEL
     summary_format: str = DEFAULT_SUMMARY_FORMAT
     working_directory: Path | None = None
+    shared_env_path: Path = DEFAULT_SHARED_ENV_PATH
+    xurl_app_name: str = DEFAULT_XURL_APP_NAME
 
 
 @dataclass(frozen=True)
@@ -92,6 +96,14 @@ def render_direct_delivery_wrapper(spec: DirectDeliveryWrapperSpec) -> str:
     working_directory = Path(spec.working_directory or repo_root)
     python_path_root = repo_root / "src"
     command = " ".join(shlex.quote(argument) for argument in build_direct_delivery_program_arguments(spec))
+    shared_env_path = spec.shared_env_path
+    shared_env_reference = (
+        f"~/{shared_env_path.relative_to(Path.home())}"
+        if shared_env_path.is_absolute() and Path.home() in shared_env_path.parents
+        else str(shared_env_path)
+    )
+    shared_env_shell = shared_env_reference if shared_env_reference.startswith("~/") else shlex.quote(shared_env_reference)
+    xurl_app_name = shlex.quote(spec.xurl_app_name)
     return "\n".join(
         [
             "#!/bin/zsh",
@@ -99,6 +111,16 @@ def render_direct_delivery_wrapper(spec: DirectDeliveryWrapperSpec) -> str:
             "",
             f"export PATH={DEFAULT_LAUNCHD_PATH}",
             f"export PYTHONPATH={shlex.quote(str(python_path_root))}\"${{PYTHONPATH:+:$PYTHONPATH}}\"",
+            "",
+            f'if [ -f {shared_env_shell} ]; then',
+            f'  source {shared_env_shell}',
+            "fi",
+            'if [ -n "${X_CLIENT_ID:-}" ] && [ -n "${X_CLIENT_SECRET:-}" ]; then',
+            f'  if ! xurl auth apps add {xurl_app_name} --client-id "$X_CLIENT_ID" --client-secret "$X_CLIENT_SECRET" >/dev/null 2>&1; then',
+            f'    xurl auth apps update {xurl_app_name} --client-id "$X_CLIENT_ID" --client-secret "$X_CLIENT_SECRET" >/dev/null 2>&1',
+            "  fi",
+            f'  xurl auth default {xurl_app_name} >/dev/null 2>&1 || true',
+            "fi",
             "",
             f"cd {shlex.quote(str(working_directory))}",
             f"exec {command}",
