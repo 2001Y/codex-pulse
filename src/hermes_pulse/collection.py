@@ -13,8 +13,6 @@ COLLECTION_PRESETS = {
         "gmail",
         "chatgpt_history",
         "grok_history",
-        "hermes_history",
-        "notes",
     ],
     "broad_day_end": [
         "feed_registry",
@@ -24,8 +22,6 @@ COLLECTION_PRESETS = {
         "gmail",
         "chatgpt_history",
         "grok_history",
-        "hermes_history",
-        "notes",
     ],
     "calendar_leave_now": ["google_calendar"],
     "mail_operational": ["gmail"],

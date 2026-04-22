@@ -78,10 +78,10 @@ def test_main_supports_evening_digest_command(monkeypatch, tmp_path: Path) -> No
                 "evening-digest",
                 "--source-registry",
                 str(SOURCE_REGISTRY_PATH),
-                "--hermes-history",
-                str(HERMES_HISTORY_PATH),
-                "--notes",
-                str(NOTES_PATH),
+                "--chatgpt-history",
+                str(CHATGPT_HISTORY_PATH),
+                "--grok-history",
+                str(GROK_HISTORY_PATH),
                 "--output",
                 str(output_path),
             ]
@@ -158,10 +158,10 @@ def test_morning_digest_uses_live_feed_fetching_when_no_fixture_is_provided(
                 "morning-digest",
                 "--source-registry",
                 str(SOURCE_REGISTRY_PATH),
-                "--hermes-history",
-                str(HERMES_HISTORY_PATH),
-                "--notes",
-                str(NOTES_PATH),
+                "--chatgpt-history",
+                str(CHATGPT_HISTORY_PATH),
+                "--grok-history",
+                str(GROK_HISTORY_PATH),
                 "--output",
                 str(output_path),
             ]
@@ -267,10 +267,10 @@ def test_morning_digest_archives_raw_items_before_invoking_codex_and_delivers_ca
                 "morning-digest",
                 "--source-registry",
                 str(SOURCE_REGISTRY_PATH),
-                "--hermes-history",
-                str(HERMES_HISTORY_PATH),
-                "--notes",
-                str(NOTES_PATH),
+                "--chatgpt-history",
+                str(CHATGPT_HISTORY_PATH),
+                "--grok-history",
+                str(GROK_HISTORY_PATH),
                 "--archive-root",
                 str(archive_root),
                 "--output",
@@ -294,8 +294,8 @@ def test_morning_digest_archives_raw_items_before_invoking_codex_and_delivers_ca
     assert summary_path.read_text() == output_path.read_text()
     assert not (archive_root / archive_date / "summary" / "morning-digest.md").exists()
     raw_items = json.loads(raw_items_path.read_text())
-    assert [item["source"] for item in raw_items] == ["hermes_history", "notes"]
-    assert raw_items[0]["id"] == "session-123"
+    assert {item["source"] for item in raw_items} == {"chatgpt_history", "grok_history"}
+    assert len(raw_items) == 2
 
 
 def test_morning_digest_defaults_archive_root_to_home_pulse_directory(
@@ -311,10 +311,10 @@ def test_morning_digest_defaults_archive_root_to_home_pulse_directory(
                 "morning-digest",
                 "--source-registry",
                 str(SOURCE_REGISTRY_PATH),
-                "--hermes-history",
-                str(HERMES_HISTORY_PATH),
-                "--notes",
-                str(NOTES_PATH),
+                "--chatgpt-history",
+                str(CHATGPT_HISTORY_PATH),
+                "--grok-history",
+                str(GROK_HISTORY_PATH),
             ]
         )
         == 0
@@ -327,7 +327,7 @@ def test_morning_digest_defaults_archive_root_to_home_pulse_directory(
     assert summary_path.read_text().startswith("# Codex Digest\n")
     raw_items = json.loads(raw_items_path.read_text())
     assert len(raw_items) == 2
-    assert raw_items[1]["id"] == "sample_notes"
+    assert {item["source"] for item in raw_items} == {"chatgpt_history", "grok_history"}
 
 
 def test_pyproject_declares_console_entrypoint() -> None:

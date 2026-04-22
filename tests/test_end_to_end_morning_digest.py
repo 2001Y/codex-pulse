@@ -90,8 +90,6 @@ def test_end_to_end_scheduled_morning_digest_runs_against_fixtures(monkeypatch, 
         "official-blog",
         "trusted-secondary-blog",
         "discovery-only-source",
-        "hermes_history",
-        "notes",
     }
 
     candidates = synthesize_candidates(collected)
@@ -100,8 +98,6 @@ def test_end_to_end_scheduled_morning_digest_runs_against_fixtures(monkeypatch, 
     assert candidates[0].score >= candidates[-1].score
     assert any(candidate.item_ids[0].startswith("official-blog:") for candidate in candidates)
     assert any(candidate.item_ids[0].startswith("discovery-only-source:") for candidate in candidates)
-    assert any(candidate.item_ids == ["session-123"] for candidate in candidates)
-    assert any(candidate.item_ids == ["sample_notes"] for candidate in candidates)
 
     output_path = tmp_path / "deliveries" / "morning-digest.md"
 
@@ -131,8 +127,8 @@ def test_end_to_end_scheduled_morning_digest_runs_against_fixtures(monkeypatch, 
     assert markdown.startswith("# Codex Digest\n")
     assert "Launch update" in markdown
     assert "Discovery scoop" in markdown
-    assert "Morning planning" in markdown
-    assert "Notes" in markdown
+    assert "Morning planning" not in markdown
+    assert "Notes" not in markdown
     assert codex_calls[0]["archive_directory"].name == date.today().isoformat()
     assert any(item["url"] == "https://example.com/posts/launch-update" for item in codex_calls[0]["raw_items"])
 
@@ -178,8 +174,6 @@ def test_end_to_end_morning_digest_archives_feed_and_local_context_items(
         "official-blog",
         "trusted-secondary-blog",
         "discovery-only-source",
-        "hermes_history",
-        "notes",
     }
     assert any(item["id"].startswith("official-blog:") for item in raw_items)
 
@@ -219,4 +213,4 @@ def test_morning_digest_continues_when_x_signals_fail(monkeypatch, tmp_path: Pat
 
     markdown = output_path.read_text()
     assert "Launch update" in markdown
-    assert "Morning planning" in markdown
+    assert "Morning planning" not in markdown

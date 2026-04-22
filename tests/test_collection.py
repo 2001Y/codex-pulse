@@ -50,7 +50,7 @@ def test_broad_day_start_invokes_expected_connectors_only() -> None:
         },
     )
 
-    assert collected == ["feed_registry", "known_source_search", "x_signals", "google_calendar", "gmail", "chatgpt_history", "grok_history", "hermes_history", "notes"]
+    assert collected == ["feed_registry", "known_source_search", "x_signals", "google_calendar", "gmail", "chatgpt_history", "grok_history"]
     assert feed.calls == 1
     assert known_source_search.calls == 1
     assert x_signals.calls == 1
@@ -58,8 +58,8 @@ def test_broad_day_start_invokes_expected_connectors_only() -> None:
     assert gmail.calls == 1
     assert chatgpt_history.calls == 1
     assert grok_history.calls == 1
-    assert hermes_history.calls == 1
-    assert notes.calls == 1
+    assert hermes_history.calls == 0
+    assert notes.calls == 0
     assert unrelated.calls == 0
 
 
@@ -121,7 +121,7 @@ def test_broad_day_end_invokes_expected_connectors_only() -> None:
         },
     )
 
-    assert collected == ["feed_registry", "known_source_search", "x_signals", "google_calendar", "gmail", "chatgpt_history", "grok_history", "hermes_history", "notes"]
+    assert collected == ["feed_registry", "known_source_search", "x_signals", "google_calendar", "gmail", "chatgpt_history", "grok_history"]
     assert feed.calls == 1
     assert known_source_search.calls == 1
     assert x_signals.calls == 1
@@ -129,8 +129,8 @@ def test_broad_day_end_invokes_expected_connectors_only() -> None:
     assert gmail.calls == 1
     assert chatgpt_history.calls == 1
     assert grok_history.calls == 1
-    assert hermes_history.calls == 1
-    assert notes.calls == 1
+    assert hermes_history.calls == 0
+    assert notes.calls == 0
 
 
 def test_calendar_leave_now_invokes_calendar_connector_only() -> None:
