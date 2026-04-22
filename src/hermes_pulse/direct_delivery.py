@@ -5,7 +5,7 @@ import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -113,17 +113,95 @@ def _summarize_archive_with_retries(
     attempts = len(tuple(retry_delays_seconds)) + 1
     delays = list(retry_delays_seconds)
     factory = summarizer_factory or CodexCliSummarizer
+    attempt_metadata: list[dict[str, Any]] = []
+    metadata_path = archive_directory / "metadata" / "codex-attempts.json"
     for attempt_index in range(attempts):
+        started_at = _utc_now_isoformat()
         try:
             summarizer = factory(model=codex_model, summary_format=summary_format)
-            return summarizer.summarize_archive(archive_directory)
+            artifact = summarizer.summarize_archive(archive_directory)
+            attempt_metadata.append(
+                {
+                    "attempt": attempt_index + 1,
+                    "status": "succeeded",
+                    "started_at": started_at,
+                    "finished_at": _utc_now_isoformat(),
+                    "error": None,
+                }
+            )
+            _persist_codex_attempt_metadata(
+                metadata_path,
+                codex_model=codex_model,
+                summary_format=summary_format,
+                attempts=attempt_metadata,
+            )
+            return artifact
         except Exception as error:
             last_error = error
+            attempt_metadata.append(
+                {
+                    "attempt": attempt_index + 1,
+                    "status": "failed",
+                    "started_at": started_at,
+                    "finished_at": _utc_now_isoformat(),
+                    "error": str(error),
+                }
+            )
+            _persist_codex_attempt_metadata(
+                metadata_path,
+                codex_model=codex_model,
+                summary_format=summary_format,
+                attempts=attempt_metadata,
+            )
             if attempt_index >= len(delays):
                 break
             sleep(delays[attempt_index])
     assert last_error is not None
     raise last_error
+
+
+def _persist_codex_attempt_metadata(
+    path: Path,
+    *,
+    codex_model: str,
+    summary_format: str,
+    attempts: list[dict[str, Any]],
+) -> None:
+    try:
+        _write_codex_attempt_metadata(
+            path,
+            codex_model=codex_model,
+            summary_format=summary_format,
+            attempts=attempts,
+        )
+    except OSError:
+        return
+
+
+def _write_codex_attempt_metadata(
+    path: Path,
+    *,
+    codex_model: str,
+    summary_format: str,
+    attempts: list[dict[str, Any]],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "model": codex_model,
+                "summary_format": summary_format,
+                "attempts": attempts,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n"
+    )
+
+
+def _utc_now_isoformat() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def post_canonical_digest_to_slack(

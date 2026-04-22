@@ -1,4 +1,5 @@
 import json
+import subprocess
 from datetime import date
 from pathlib import Path
 
@@ -406,3 +407,83 @@ def test_summarize_archive_with_retries_raises_after_exhausting_retries() -> Non
 
     assert attempts == [1, 2, 3]
     assert sleeps == [300, 300]
+
+
+def test_summarize_archive_with_retries_writes_attempt_metadata_for_failures_and_success(tmp_path: Path) -> None:
+    attempts: list[int] = []
+
+    class FlakySummarizer:
+        def summarize_archive(self, archive_directory: str | Path) -> SummaryArtifact:
+            attempts.append(len(attempts) + 1)
+            if len(attempts) == 1:
+                raise RuntimeError("temporary high demand")
+            return SummaryArtifact(path=Path("/tmp/codex-digest.md"), content="# ok")
+
+    artifact = direct_delivery._summarize_archive_with_retries(
+        tmp_path,
+        codex_model=DEFAULT_CODEX_MODEL,
+        summary_format=DEFAULT_SUMMARY_FORMAT,
+        retry_delays_seconds=(0,),
+        summarizer_factory=lambda **kwargs: FlakySummarizer(),
+        sleep=lambda _seconds: None,
+    )
+
+    metadata = json.loads((tmp_path / "metadata" / "codex-attempts.json").read_text())
+
+    assert artifact.content == "# ok"
+    assert [entry["attempt"] for entry in metadata["attempts"]] == [1, 2]
+    assert metadata["attempts"][0]["status"] == "failed"
+    assert metadata["attempts"][0]["error"] == "temporary high demand"
+    assert metadata["attempts"][1]["status"] == "succeeded"
+    assert metadata["attempts"][1]["error"] is None
+    assert metadata["model"] == DEFAULT_CODEX_MODEL
+    assert metadata["summary_format"] == DEFAULT_SUMMARY_FORMAT
+
+
+def test_codex_cli_invocation_raises_timeout_error_when_codex_hangs(monkeypatch, tmp_path: Path) -> None:
+    invocation = direct_delivery.CodexCliSummarizer()._invocation
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=["codex", "exec"], timeout=123)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="timed out after 123s"):
+        invocation.run("prompt", cwd=tmp_path)
+
+
+def test_summarize_archive_with_retries_ignores_metadata_write_failure_after_success(monkeypatch, tmp_path: Path) -> None:
+    attempts: list[int] = []
+
+    class SuccessfulSummarizer:
+        def summarize_archive(self, archive_directory: str | Path) -> SummaryArtifact:
+            attempts.append(1)
+            return SummaryArtifact(path=Path("/tmp/codex-digest.md"), content="# ok")
+
+    monkeypatch.setattr(direct_delivery, "_write_codex_attempt_metadata", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk full")))
+
+    artifact = direct_delivery._summarize_archive_with_retries(
+        tmp_path,
+        retry_delays_seconds=(),
+        summarizer_factory=lambda **kwargs: SuccessfulSummarizer(),
+        sleep=lambda _seconds: None,
+    )
+
+    assert artifact.content == "# ok"
+    assert attempts == [1]
+
+
+def test_summarize_archive_with_retries_preserves_original_error_when_metadata_write_fails(monkeypatch, tmp_path: Path) -> None:
+    class AlwaysFailingSummarizer:
+        def summarize_archive(self, archive_directory: str | Path) -> SummaryArtifact:
+            raise RuntimeError("temporary high demand")
+
+    monkeypatch.setattr(direct_delivery, "_write_codex_attempt_metadata", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk full")))
+
+    with pytest.raises(RuntimeError, match="temporary high demand"):
+        direct_delivery._summarize_archive_with_retries(
+            tmp_path,
+            retry_delays_seconds=(),
+            summarizer_factory=lambda **kwargs: AlwaysFailingSummarizer(),
+            sleep=lambda _seconds: None,
+        )

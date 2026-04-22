@@ -3,6 +3,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+DEFAULT_CODEX_TIMEOUT_SECONDS = 900
+
 from hermes_pulse.summarization.base import (
     CODEX_DIGEST_RELATIVE_PATH,
     RAW_ITEMS_RELATIVE_PATH,
@@ -40,31 +42,43 @@ class CodexCliSummarizer:
 
 
 class CodexCliInvocation:
-    def __init__(self, executable: str = "codex", *, model: str = DEFAULT_CODEX_MODEL) -> None:
+    def __init__(
+        self,
+        executable: str = "codex",
+        *,
+        model: str = DEFAULT_CODEX_MODEL,
+        timeout_seconds: int = DEFAULT_CODEX_TIMEOUT_SECONDS,
+    ) -> None:
         self._executable = executable
         self._model = model
+        self._timeout_seconds = timeout_seconds
 
     def run(self, prompt: str, *, cwd: Path) -> str:
         with tempfile.NamedTemporaryFile(mode="w+", suffix=".md") as output_file:
-            completed = subprocess.run(
-                [
-                    self._executable,
-                    "exec",
-                    "--model",
-                    self._model,
-                    "--cd",
-                    str(cwd),
-                    "--skip-git-repo-check",
-                    "--ephemeral",
-                    "--output-last-message",
-                    output_file.name,
-                    "-",
-                ],
-                input=prompt,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            try:
+                completed = subprocess.run(
+                    [
+                        self._executable,
+                        "exec",
+                        "--model",
+                        self._model,
+                        "--cd",
+                        str(cwd),
+                        "--skip-git-repo-check",
+                        "--ephemeral",
+                        "--output-last-message",
+                        output_file.name,
+                        "-",
+                    ],
+                    input=prompt,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=self._timeout_seconds,
+                )
+            except subprocess.TimeoutExpired as error:
+                timeout_seconds = int(error.timeout) if error.timeout else self._timeout_seconds
+                raise RuntimeError(f"codex exec timed out after {timeout_seconds}s") from error
             if completed.returncode != 0:
                 raise RuntimeError(completed.stderr.strip() or completed.stdout.strip() or "codex exec failed")
             return Path(output_file.name).read_text()
