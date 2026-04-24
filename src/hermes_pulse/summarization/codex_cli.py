@@ -1,13 +1,7 @@
 import json
 import subprocess
 import tempfile
-import urllib.error
-import urllib.parse
-import urllib.request
-from html.parser import HTMLParser
 from pathlib import Path
-
-DEFAULT_CODEX_TIMEOUT_SECONDS = 900
 
 from hermes_pulse.summarization.base import (
     CODEX_DIGEST_RELATIVE_PATH,
@@ -15,7 +9,9 @@ from hermes_pulse.summarization.base import (
     CodexInvocation,
     SummaryArtifact,
 )
+from hermes_pulse.title_resolution import fetch_title_from_url, synthesize_title_with_codex_spark
 
+DEFAULT_CODEX_TIMEOUT_SECONDS = 900
 DEFAULT_CODEX_MODEL = "gpt-5.4"
 DEFAULT_SUMMARY_FORMAT = "briefing-v1"
 MAX_PROMPT_RAW_ITEMS = 200
@@ -28,24 +24,49 @@ class CodexCliSummarizer:
         *,
         model: str = DEFAULT_CODEX_MODEL,
         summary_format: str = DEFAULT_SUMMARY_FORMAT,
+        title_fetcher=None,
+        title_synthesizer=None,
     ) -> None:
         self._invocation = invocation or CodexCliInvocation(model=model)
         self._summary_format = summary_format
+        self._title_fetcher = title_fetcher or fetch_title_from_url
+        self._title_synthesizer = title_synthesizer or synthesize_title_with_codex_spark
 
     def summarize_archive(self, archive_directory: str | Path) -> SummaryArtifact:
         archive_directory = Path(archive_directory)
         raw_items_path = archive_directory / RAW_ITEMS_RELATIVE_PATH
         raw_items = raw_items_path.read_text()
-        prompt = build_codex_digest_prompt(archive_directory, raw_items, summary_format=self._summary_format)
+        items = json.loads(raw_items)
+        chunks = _chunk_items(items, MAX_PROMPT_RAW_ITEMS)
         with tempfile.TemporaryDirectory(prefix="hermes-pulse-codex-") as temp_dir:
             codex_context = Path(temp_dir)
             _stage_sanitized_codex_context(archive_directory, codex_context)
-            content = self._invocation.run(prompt, cwd=codex_context)
+            partial_summaries: list[str] = []
+            for chunk_index, chunk in enumerate(chunks, start=1):
+                prompt = build_codex_digest_prompt(
+                    archive_directory,
+                    json.dumps(chunk, ensure_ascii=False),
+                    summary_format=self._summary_format,
+                    title_fetcher=self._title_fetcher,
+                    title_synthesizer=self._title_synthesizer,
+                    chunk_index=chunk_index,
+                    chunk_total=len(chunks),
+                )
+                partial_summaries.append(self._invocation.run(prompt, cwd=codex_context))
+            if len(partial_summaries) == 1:
+                content = partial_summaries[0]
+            else:
+                merge_prompt = build_codex_merge_prompt(partial_summaries, summary_format=self._summary_format)
+                content = self._invocation.run(merge_prompt, cwd=codex_context)
 
         output_path = archive_directory / CODEX_DIGEST_RELATIVE_PATH
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(content)
-        return SummaryArtifact(path=output_path, content=content)
+        return SummaryArtifact(
+            path=output_path,
+            content=content,
+            partial_contents=partial_summaries if len(partial_summaries) > 1 else None,
+        )
 
 
 class CodexCliInvocation:
@@ -97,9 +118,15 @@ def build_codex_digest_prompt(
     *,
     summary_format: str = DEFAULT_SUMMARY_FORMAT,
     title_fetcher=None,
+    title_synthesizer=None,
+    chunk_index: int = 1,
+    chunk_total: int = 1,
 ) -> str:
-    compact_raw_items, raw_item_counts = _compact_raw_items_for_prompt(raw_items)
-    url_title_index = _build_url_title_index(raw_items, title_fetcher=title_fetcher)
+    compact_raw_items, raw_item_counts = _compact_raw_items_for_prompt(
+        raw_items,
+        title_fetcher=title_fetcher,
+        title_synthesizer=title_synthesizer,
+    )
     lines = [
         "あなたは Hermes Pulse の要約担当です。",
         "以下の sanitized archive context から canonical digest を作成してください。",
@@ -108,6 +135,7 @@ def build_codex_digest_prompt(
         "本文中のリンクは可能な限り保持し、URL を壊さないでください。",
         "不明な点は断定せず、与えられた情報だけで簡潔に要約してください。",
         "内部的な source 名や流入元ラベルではなく、見えている内容そのものを同列に扱ってください。",
+        f"この prompt は収集差分 chunk {chunk_index}/{chunk_total} です。chunk 内の重要事項を取りこぼさず要約してください。",
         "",
         *build_summary_format_instructions(summary_format),
         "",
@@ -121,19 +149,32 @@ def build_codex_digest_prompt(
         compact_raw_items.rstrip(),
         "```",
         "",
-        "## URL/title index for all URL-bearing items",
-        "```json",
-        url_title_index.rstrip(),
-        "```",
     ]
+    return "\n".join(lines)
 
-    lines.append("")
+
+def build_codex_merge_prompt(chunk_summaries: list[str], *, summary_format: str = DEFAULT_SUMMARY_FORMAT) -> str:
+    lines = [
+        "あなたは Hermes Pulse の最終編集担当です。",
+        "以下は複数 chunk から作った部分要約です。重要事項を重複なく統合し、最終版だけを返してください。",
+        "情報量を落としすぎず、同一テーマの重複 bullet は統合してください。",
+        "",
+        *build_summary_format_instructions(summary_format),
+        "",
+    ]
+    for index, summary in enumerate(chunk_summaries, start=1):
+        lines.extend(
+            [
+                f"## Partial summary {index}",
+                summary.rstrip(),
+                "",
+            ]
+        )
     return "\n".join(lines)
 
 
 def _stage_sanitized_codex_context(archive_directory: Path, codex_context: Path) -> None:
     codex_context.mkdir(parents=True, exist_ok=True)
-
 
 
 def build_summary_format_instructions(summary_format: str) -> list[str]:
@@ -143,34 +184,29 @@ def build_summary_format_instructions(summary_format: str) -> list[str]:
             "見出しはこの順番で固定してください: `☀ *Hermes Pulse Morning Briefing*` / `▫ 主要トピック` / `▫ 今日の予定・期限`。",
             "リンクが必要な箇所は、該当する語句を Markdown リンク `[ラベル](URL)` として文中に埋め込んでください。",
             "URL を文末に列挙しないでください。裸の URL を単独で並べるのも避けてください。",
-            "`▫ 主要トピック` は 3〜6 件の箇条書き、各項目は 1 行で要点→必要なら文中リンク。",
+            "`▫ 主要トピック` は必要な件数だけ箇条書きにしてよい。重要事項の取りこぼしを避け、各項目は 1 行で要点→必要なら文中リンク。",
             "`▫ 主要トピック` は internal source 名に引きずられず、与えられた URL/title/本文断片を同列に見て重要度順に選んでください。",
             "`▫ 今日の予定・期限` は当日または近い日時の予定だけを書く。無ければ `- 目立った予定なし`。",
         ]
     raise ValueError(f"Unsupported summary format: {summary_format}")
 
 
-def _existing_summary_markdown(archive_directory: Path) -> list[tuple[Path, str]]:
-    summary_directory = archive_directory / "summary"
-    if not summary_directory.exists():
-        return []
-
-    markdown_files = []
-    for path in sorted(summary_directory.glob("*.md")):
-        if path.name == CODEX_DIGEST_RELATIVE_PATH.name:
-            continue
-        markdown_files.append((path.relative_to(archive_directory), path.read_text()))
-    return markdown_files
+def _chunk_items(items: list[dict[str, object]], chunk_size: int) -> list[list[dict[str, object]]]:
+    if not items:
+        return [[]]
+    return [items[index : index + chunk_size] for index in range(0, len(items), chunk_size)]
 
 
-def _compact_raw_items_for_prompt(raw_items: str) -> tuple[str, dict[str, int]]:
+def _compact_raw_items_for_prompt(raw_items: str, *, title_fetcher=None, title_synthesizer=None) -> tuple[str, dict[str, int]]:
     items = json.loads(raw_items)
     compact_items: list[dict[str, object]] = []
+    fetcher = title_fetcher or fetch_title_from_url
+    synthesizer = title_synthesizer or synthesize_title_with_codex_spark
     for item in items[:MAX_PROMPT_RAW_ITEMS]:
         timestamps = item.get("timestamps") or {}
         compact_items.append(
             {
-                "title": _truncate_text(item.get("title")),
+                "title": _resolve_item_title(item, fetcher=fetcher, synthesizer=synthesizer),
                 "excerpt": _truncate_text(item.get("excerpt"), max_length=280),
                 "body": _truncate_text(item.get("body"), max_length=280),
                 "url": item.get("url"),
@@ -190,6 +226,24 @@ def _compact_raw_items_for_prompt(raw_items: str) -> tuple[str, dict[str, int]]:
     return json.dumps(compact_items, ensure_ascii=False, indent=2) + "\n", raw_item_counts
 
 
+def _resolve_item_title(item: dict[str, object], *, fetcher, synthesizer) -> str | None:
+    existing_title = _truncate_text(item.get("title"))
+    if existing_title is not None:
+        return existing_title
+    url = item.get("url")
+    if isinstance(url, str) and url:
+        fetched_title = _truncate_text(fetcher(url))
+        if fetched_title is not None:
+            return fetched_title
+        body_text = _truncate_text(item.get("body"), max_length=280) or _truncate_text(item.get("excerpt"), max_length=280)
+        if body_text:
+            synthesized_title = _truncate_text(synthesizer(body_text, url))
+            if synthesized_title is not None:
+                return synthesized_title
+        return _fallback_title_for_url_item(url)
+    return _truncate_text(item.get("excerpt")) or _truncate_text(item.get("body")) or "Untitled item"
+
+
 def _truncate_text(value: object, *, max_length: int = 160) -> str | None:
     if not isinstance(value, str):
         return None
@@ -199,67 +253,5 @@ def _truncate_text(value: object, *, max_length: int = 160) -> str | None:
     return f"{text[: max_length - 1]}…"
 
 
-def _build_url_title_index(raw_items: str, *, title_fetcher=None) -> str:
-    items = json.loads(raw_items)
-    fetcher = title_fetcher or _fetch_title_from_url
-    indexed_items: list[dict[str, object]] = []
-    for item in items:
-        url = item.get("url")
-        if not isinstance(url, str) or not url:
-            continue
-        title = _truncate_text(item.get("title"))
-        if title is None:
-            title = _truncate_text(fetcher(url)) or _fallback_title_for_url_item(item, url)
-        indexed_items.append(
-            {
-                "title": title,
-                "url": url,
-            }
-        )
-    return json.dumps(indexed_items, ensure_ascii=False, indent=2) + "\n"
-
-
-def _fallback_title_for_url_item(item: dict[str, object], url: str) -> str:
-    parsed = urllib.parse.urlparse(url)
-    path = parsed.path.rstrip("/") or "/"
-    return f"{parsed.netloc}{path}"
-
-
-class _TitleParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self._in_title = False
-        self.parts: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.lower() == "title":
-            self._in_title = True
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag.lower() == "title":
-            self._in_title = False
-
-    def handle_data(self, data: str) -> None:
-        if self._in_title:
-            self.parts.append(data)
-
-
-def _fetch_title_from_url(url: str) -> str | None:
-    request = urllib.request.Request(
-        url,
-        headers={"User-Agent": "HermesPulse/1.0 (+https://github.com/2001Y/hermes-pulse)"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=5) as response:
-            content_type = response.headers.get("Content-Type", "")
-            if "html" not in content_type:
-                return None
-            charset = response.headers.get_content_charset() or "utf-8"
-            body = response.read(65536).decode(charset, errors="replace")
-    except (urllib.error.URLError, TimeoutError, ValueError):
-        return None
-
-    parser = _TitleParser()
-    parser.feed(body)
-    title = " ".join("".join(parser.parts).split())
-    return title or None
+def _fallback_title_for_url_item(url: str) -> str:
+    return url.split("//", 1)[-1]

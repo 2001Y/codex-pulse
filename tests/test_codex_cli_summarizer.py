@@ -39,8 +39,7 @@ def test_build_codex_digest_prompt_limits_embedded_raw_items_and_reports_omissio
     prompt = build_codex_digest_prompt(archive_directory, raw_items)
 
     assert '"title": "Title 0"' in prompt
-    primary_grounding = prompt.split("## URL/title index for all URL-bearing items", 1)[0]
-    assert '"title": "Title 249"' not in primary_grounding
+    assert '"title": "Title 249"' not in prompt
     assert "## item counts" in prompt
     assert '"included_in_prompt": 200' in prompt
     assert '"omitted_from_prompt": 50' in prompt
@@ -53,7 +52,14 @@ def test_build_summary_format_instructions_requires_inline_markdown_links_in_bri
     assert any("URL を文末に列挙しない" in line for line in instructions)
 
 
-def test_build_codex_digest_prompt_embeds_url_title_index_for_all_url_items(tmp_path: Path) -> None:
+def test_build_summary_format_instructions_does_not_limit_primary_topics_to_fixed_small_range() -> None:
+    instructions = build_summary_format_instructions("briefing-v1")
+
+    assert not any("3〜6 件" in line for line in instructions)
+    assert any("必要な件数" in line for line in instructions)
+
+
+def test_build_codex_digest_prompt_embeds_fetched_titles_inline_without_separate_url_index(tmp_path: Path) -> None:
     archive_directory = tmp_path / "archive"
     raw_directory = archive_directory / "raw"
     raw_directory.mkdir(parents=True)
@@ -72,14 +78,11 @@ def test_build_codex_digest_prompt_embeds_url_title_index_for_all_url_items(tmp_
 
     prompt = build_codex_digest_prompt(archive_directory, raw_items)
 
-    assert "## URL/title index for all URL-bearing items" in prompt
+    assert "## URL/title index for all URL-bearing items" not in prompt
     assert '"url": "https://example.com/0"' in prompt
     assert '"title": "Title 0"' in prompt
-    assert '"url": "https://example.com/249"' in prompt
-    assert '"title": "Title 249"' in prompt
-    url_index = prompt.split("## URL/title index for all URL-bearing items", 1)[1]
-    assert '"source"' not in url_index
-    assert '"id"' not in url_index
+    assert '"url": "https://example.com/199"' in prompt
+    assert '"title": "Title 199"' in prompt
 
 
 def test_build_codex_digest_prompt_omits_internal_source_labels_from_llm_grounding(tmp_path: Path) -> None:
@@ -153,6 +156,36 @@ def test_build_codex_digest_prompt_fetches_missing_title_for_url_items(tmp_path:
     assert '"url": "https://example.com/missing-title"' in prompt
     assert '"title": "Fetched title"' in prompt
     assert "Timeline excerpt should not become title" in prompt
+
+
+def test_build_codex_digest_prompt_synthesizes_missing_title_with_codex_spark_when_fetch_fails(tmp_path: Path) -> None:
+    archive_directory = tmp_path / "archive"
+    raw_directory = archive_directory / "raw"
+    raw_directory.mkdir(parents=True)
+    raw_items = json.dumps(
+        [
+            {
+                "id": "x-home:1",
+                "source": "x_home_timeline_reverse_chronological",
+                "source_kind": "social_post",
+                "title": None,
+                "excerpt": "Timeline excerpt should not become title",
+                "body": "Body text",
+                "url": "https://example.com/missing-title",
+            }
+        ],
+        ensure_ascii=False,
+    )
+    (raw_directory / "collected-items.json").write_text(raw_items)
+
+    prompt = build_codex_digest_prompt(
+        archive_directory,
+        raw_items,
+        title_fetcher=lambda _url: None,
+        title_synthesizer=lambda text, url: f"Spark title for {url}",
+    )
+
+    assert '"title": "Spark title for https://example.com/missing-title"' in prompt
 
 
 def test_build_codex_digest_prompt_uses_neutral_fallback_title_for_untitled_urls(tmp_path: Path) -> None:

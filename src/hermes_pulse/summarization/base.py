@@ -11,6 +11,7 @@ CODEX_DIGEST_RELATIVE_PATH = Path("summary") / "codex-digest.md"
 class SummaryArtifact:
     path: Path
     content: str
+    partial_contents: list[str] | None = None
 
 
 class CodexInvocation(Protocol):

@@ -100,7 +100,7 @@ def run_morning_digest_direct_delivery(
         archive_root=archive_root,
         args=args,
     )
-    _summarize_archive_with_retries(
+    artifact = _summarize_archive_with_retries(
         archive_directory,
         codex_model=args.codex_model,
         summary_format=args.summary_format,
@@ -110,6 +110,7 @@ def run_morning_digest_direct_delivery(
         channel=args.channel,
         thread_ts=args.thread_ts,
         post_message=post_message,
+        summary_artifact=artifact,
     )
 
 
@@ -224,6 +225,7 @@ def post_canonical_digest_to_slack(
     thread_ts: str | None = None,
     post_message: SlackPoster | None = None,
     slack_message_limit: int = DEFAULT_SLACK_MESSAGE_LIMIT,
+    summary_artifact: SummaryArtifact | None = None,
 ) -> DirectDeliveryResult:
     archive_directory = Path(archive_directory)
     digest_path = archive_directory / CODEX_DIGEST_RELATIVE_PATH
@@ -231,10 +233,17 @@ def post_canonical_digest_to_slack(
         raise FileNotFoundError(f"Canonical Codex digest artifact is missing: {digest_path}")
 
     content = digest_path.read_text()
-    rendered_content = _render_digest_for_slack(content)
-    rendered_content = _prepend_source_error_notice_if_needed(rendered_content, archive_directory)
-    rendered_content = _prepend_grok_fallback_notice_if_needed(rendered_content, archive_directory)
-    message_chunks = _split_slack_text(rendered_content, limit=slack_message_limit)
+    raw_messages = list((summary_artifact.partial_contents or [content]) if summary_artifact is not None else [content])
+    rendered_messages = [
+        _prepend_grok_fallback_notice_if_needed(
+            _prepend_source_error_notice_if_needed(_render_digest_for_slack(message), archive_directory),
+            archive_directory,
+        )
+        for message in raw_messages
+    ]
+    message_chunks: list[str] = []
+    for rendered_message in rendered_messages:
+        message_chunks.extend(_split_slack_text(rendered_message, limit=slack_message_limit))
     message_chunk_blocks = [_build_slack_blocks(chunk) for chunk in message_chunks]
     poster = post_message or load_slack_direct_post_message()
     slack_responses = _post_slack_chunks(

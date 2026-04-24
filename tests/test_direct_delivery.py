@@ -365,6 +365,77 @@ def test_post_canonical_digest_to_slack_fails_clearly_when_canonical_artifact_is
         )
 
 
+def test_run_morning_digest_direct_delivery_posts_partial_summaries_as_thread_replies(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    archive_root = tmp_path / "archive-root"
+    posted: list[dict[str, object]] = []
+
+    def fake_post_message(
+        text: str,
+        channel: str,
+        thread_ts: str | None = None,
+        *,
+        unfurl_links: bool = False,
+        unfurl_media: bool = False,
+        blocks: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
+        posted.append({
+            "text": text,
+            "channel": channel,
+            "thread_ts": thread_ts,
+            "blocks": blocks,
+        })
+        return {"ok": True, "channel": channel, "ts": f"1712345.67{len(posted)}"}
+
+    def fake_summarize(archive_directory: Path, **_kwargs) -> SummaryArtifact:
+        archive_directory = Path(archive_directory)
+        output_path = archive_directory / "summary" / "codex-digest.md"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("# Combined\n")
+        return SummaryArtifact(
+            path=output_path,
+            content="# Combined\n",
+            partial_contents=[
+                "# Part 1\n\n- First\n",
+                "# Part 2\n\n- Second\n",
+            ],
+        )
+
+    monkeypatch.setattr(direct_delivery, "_summarize_archive_with_retries", fake_summarize)
+
+    assert (
+        direct_delivery.main(
+            [
+                "--source-registry",
+                str(SOURCE_REGISTRY_PATH),
+                "--feed-fixture",
+                str(FEED_FIXTURE_PATH),
+                "--search-fixture",
+                str(SEARCH_FIXTURE_PATH),
+                "--hermes-history",
+                str(HERMES_HISTORY_PATH),
+                "--notes",
+                str(NOTES_PATH),
+                "--archive-root",
+                str(archive_root),
+                "--channel",
+                "C123",
+            ],
+            post_message=fake_post_message,
+        )
+        == 0
+    )
+
+    assert [call["text"] for call in posted] == [
+        "# Part 1\n\n- First\n",
+        "# Part 2\n\n- Second\n",
+    ]
+    assert posted[0]["thread_ts"] is None
+    assert posted[1]["thread_ts"] == "1712345.671"
+
+
 def test_main_runs_morning_digest_pipeline_and_posts_exact_canonical_digest(
     monkeypatch,
     tmp_path: Path,
