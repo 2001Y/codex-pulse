@@ -6,18 +6,25 @@ def test_xurl_connector_collects_bookmarks_likes_and_reverse_chronological_home_
         "/2/users/me": {
             "data": {"id": "42", "username": "akita"},
         },
-        "/2/users/42/bookmarks?max_results=100&tweet.fields=created_at,author_id,text": {
+        "/2/users/42/bookmarks?max_results=100&tweet.fields=created_at,author_id,text,entities": {
             "data": [
                 {
                     "id": "100",
                     "text": "Saved launch thread",
                     "created_at": "2026-04-20T08:00:00Z",
                     "author_id": "7",
+                    "entities": {
+                        "urls": [
+                            {
+                                "expanded_url": "https://example.com/launch",
+                            }
+                        ]
+                    },
                 }
             ],
             "includes": {"users": [{"id": "7", "username": "openai"}]},
         },
-        "/2/users/42/liked_tweets?max_results=100&tweet.fields=created_at,author_id,text": {
+        "/2/users/42/liked_tweets?max_results=100&tweet.fields=created_at,author_id,text,entities": {
             "data": [
                 {
                     "id": "101",
@@ -28,7 +35,7 @@ def test_xurl_connector_collects_bookmarks_likes_and_reverse_chronological_home_
             ],
             "includes": {"users": [{"id": "8", "username": "anthropic"}]},
         },
-        "/2/users/42/timelines/reverse_chronological?max_results=100&tweet.fields=created_at,author_id,text": {
+        "/2/users/42/timelines/reverse_chronological?max_results=100&tweet.fields=created_at,author_id,text,entities": {
             "data": [
                 {
                     "id": "102",
@@ -46,20 +53,25 @@ def test_xurl_connector_collects_bookmarks_likes_and_reverse_chronological_home_
         requested_paths.append(path)
         return responses[path]
 
-    items = XUrlConnector(runner=runner).collect(["bookmarks", "likes", "home_timeline_reverse_chronological"])
+    items = XUrlConnector(
+        runner=runner,
+        title_fetcher=lambda url: "Launch article" if url == "https://example.com/launch" else None,
+    ).collect(["bookmarks", "likes", "home_timeline_reverse_chronological"])
 
     assert requested_paths == [
         "/2/users/me",
-        "/2/users/42/bookmarks?max_results=100&tweet.fields=created_at,author_id,text",
-        "/2/users/42/liked_tweets?max_results=100&tweet.fields=created_at,author_id,text",
-        "/2/users/42/timelines/reverse_chronological?max_results=100&tweet.fields=created_at,author_id,text",
+        "/2/users/42/bookmarks?max_results=100&tweet.fields=created_at,author_id,text,entities",
+        "/2/users/42/liked_tweets?max_results=100&tweet.fields=created_at,author_id,text,entities",
+        "/2/users/42/timelines/reverse_chronological?max_results=100&tweet.fields=created_at,author_id,text,entities",
     ]
     assert [item.source for item in items] == ["x_bookmarks", "x_likes", "x_home_timeline_reverse_chronological"]
     assert [item.url for item in items] == [
-        "https://x.com/openai/status/100",
+        "https://example.com/launch",
         "https://x.com/anthropic/status/101",
         "https://x.com/xdev/status/102",
     ]
+    assert items[0].title == "Launch article"
+    assert items[0].metadata["tweet_url"] == "https://x.com/openai/status/100"
     assert items[0].intent_signals is not None and items[0].intent_signals.saved is True
     assert items[1].intent_signals is not None and items[1].intent_signals.liked is True
     assert items[2].metadata["x_signal"] == "home_timeline_reverse_chronological"
@@ -86,7 +98,7 @@ def test_xurl_connector_falls_back_to_oauth1_when_oauth2_fails() -> None:
             raise RuntimeError("oauth2 missing")
         responses = {
             "/2/users/me": {"data": {"id": "42", "username": "akita"}},
-            "/2/users/42/bookmarks?max_results=100&tweet.fields=created_at,author_id,text": {
+            "/2/users/42/bookmarks?max_results=100&tweet.fields=created_at,author_id,text,entities": {
                 "data": [
                     {
                         "id": "100",
@@ -105,7 +117,87 @@ def test_xurl_connector_falls_back_to_oauth1_when_oauth2_fails() -> None:
     assert requests == [
         ("oauth2", "/2/users/me"),
         ("oauth1", "/2/users/me"),
-        ("oauth1", "/2/users/42/bookmarks?max_results=100&tweet.fields=created_at,author_id,text"),
+        ("oauth1", "/2/users/42/bookmarks?max_results=100&tweet.fields=created_at,author_id,text,entities"),
     ]
     assert len(items) == 1
     assert items[0].source == "x_bookmarks"
+
+
+def test_xurl_connector_uses_codex_spark_title_when_external_url_title_is_missing() -> None:
+    responses = {
+        "/2/users/me": {"data": {"id": "42", "username": "akita"}},
+        "/2/users/42/bookmarks?max_results=100&tweet.fields=created_at,author_id,text,entities": {
+            "data": [
+                {
+                    "id": "100",
+                    "text": "A long tweet about a launch with extra commentary",
+                    "created_at": "2026-04-20T08:00:00Z",
+                    "author_id": "7",
+                    "entities": {
+                        "urls": [
+                            {
+                                "expanded_url": "https://example.com/launch",
+                            }
+                        ]
+                    },
+                }
+            ],
+            "includes": {"users": [{"id": "7", "username": "openai"}]},
+        },
+    }
+    synth_calls: list[tuple[str, str]] = []
+
+    def synthesizer(text: str, url: str) -> str:
+        synth_calls.append((text, url))
+        return "Compressed launch title"
+
+    items = XUrlConnector(
+        runner=lambda path, auth_type: responses[path],
+        title_fetcher=lambda url: None,
+        title_synthesizer=synthesizer,
+        enable_title_synthesis=True,
+    ).collect(["bookmarks"])
+
+    assert items[0].url == "https://example.com/launch"
+    assert items[0].title == "Compressed launch title"
+    assert synth_calls == [("A long tweet about a launch with extra commentary", "https://example.com/launch")]
+
+
+def test_xurl_connector_limits_external_title_resolution_budget() -> None:
+    responses = {
+        "/2/users/me": {"data": {"id": "42", "username": "akita"}},
+        "/2/users/42/bookmarks?max_results=100&tweet.fields=created_at,author_id,text,entities": {
+            "data": [
+                {
+                    "id": "100",
+                    "text": "First external link",
+                    "created_at": "2026-04-20T08:00:00Z",
+                    "author_id": "7",
+                    "entities": {"urls": [{"expanded_url": "https://example.com/1"}]},
+                },
+                {
+                    "id": "101",
+                    "text": "Second external link",
+                    "created_at": "2026-04-20T08:01:00Z",
+                    "author_id": "7",
+                    "entities": {"urls": [{"expanded_url": "https://example.com/2"}]},
+                },
+            ],
+            "includes": {"users": [{"id": "7", "username": "openai"}]},
+        },
+    }
+    fetch_calls: list[str] = []
+    synth_calls: list[tuple[str, str]] = []
+
+    items = XUrlConnector(
+        runner=lambda path, auth_type: responses[path],
+        title_fetcher=lambda url: fetch_calls.append(url) or None,
+        title_synthesizer=lambda text, url: synth_calls.append((text, url)) or "Synthesized title",
+        max_external_title_resolutions=1,
+        enable_title_synthesis=True,
+    ).collect(["bookmarks"])
+
+    assert fetch_calls == ["https://example.com/1"]
+    assert synth_calls == [("First external link", "https://example.com/1")]
+    assert items[0].title == "Synthesized title"
+    assert items[1].title == "Second external link"

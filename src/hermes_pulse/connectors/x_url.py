@@ -3,14 +3,15 @@ import subprocess
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from hermes_pulse.models import CitationLink, CollectedItem, IntentSignals, ItemTimestamps, Provenance
+from hermes_pulse.title_resolution import fetch_title_from_url, synthesize_title_with_codex_spark
 
 Runner = Callable[[str, str], dict[str, Any]]
-
-from hermes_pulse.models import CitationLink, CollectedItem, IntentSignals, ItemTimestamps, Provenance
-
+TitleFetcher = Callable[[str], str | None]
+TitleSynthesizer = Callable[[str, str], str | None]
 
 SignalType = str
-_REQUEST_FIELDS = "tweet.fields=created_at,author_id,text"
+_REQUEST_FIELDS = "tweet.fields=created_at,author_id,text,entities"
 _SIGNAL_PATHS: dict[SignalType, tuple[str, str]] = {
     "bookmarks": ("x_bookmarks", "/2/users/{user_id}/bookmarks?max_results=100&" + _REQUEST_FIELDS),
     "likes": ("x_likes", "/2/users/{user_id}/liked_tweets?max_results=100&" + _REQUEST_FIELDS),
@@ -25,8 +26,20 @@ class XUrlConnector:
     id = "x_signals"
     source_family = "x"
 
-    def __init__(self, runner: Runner | None = None) -> None:
+    def __init__(
+        self,
+        runner: Runner | None = None,
+        *,
+        title_fetcher: TitleFetcher | None = None,
+        title_synthesizer: TitleSynthesizer | None = None,
+        max_external_title_resolutions: int = 3,
+        enable_title_synthesis: bool = False,
+    ) -> None:
         self._runner = runner or _run_xurl_json
+        self._title_fetcher = title_fetcher or fetch_title_from_url
+        self._title_synthesizer = title_synthesizer or synthesize_title_with_codex_spark
+        self._max_external_title_resolutions = max_external_title_resolutions
+        self._enable_title_synthesis = enable_title_synthesis
 
     def collect(self, signal_types: Sequence[str]) -> list[CollectedItem]:
         unsupported = [signal_type for signal_type in signal_types if signal_type not in _SIGNAL_PATHS]
@@ -43,10 +56,21 @@ class XUrlConnector:
             raise ValueError("xurl /2/users/me did not return a user id")
 
         items: list[CollectedItem] = []
+        resolved_external_titles = 0
         for signal_type in signal_types:
             source, path_template = _SIGNAL_PATHS[signal_type]
             payload = self._runner(path_template.format(user_id=user_id), auth_type)
-            items.extend(_parse_items(source, signal_type, payload))
+            new_items, used_external_title_resolutions = _parse_items(
+                source,
+                signal_type,
+                payload,
+                title_fetcher=self._title_fetcher,
+                title_synthesizer=self._title_synthesizer,
+                remaining_external_title_resolutions=max(self._max_external_title_resolutions - resolved_external_titles, 0),
+                enable_title_synthesis=self._enable_title_synthesis,
+            )
+            items.extend(new_items)
+            resolved_external_titles += used_external_title_resolutions
         return items
 
     def _resolve_auth(self, path: str) -> tuple[str, dict[str, Any]]:
@@ -60,47 +84,113 @@ class XUrlConnector:
         raise last_error
 
 
-def _parse_items(source: str, signal_type: str, payload: dict[str, Any]) -> list[CollectedItem]:
+def _parse_items(
+    source: str,
+    signal_type: str,
+    payload: dict[str, Any],
+    *,
+    title_fetcher: TitleFetcher,
+    title_synthesizer: TitleSynthesizer,
+    remaining_external_title_resolutions: int,
+    enable_title_synthesis: bool,
+) -> tuple[list[CollectedItem], int]:
     users = {
         user.get("id"): user
         for user in ((payload.get("includes") or {}).get("users") or [])
         if user.get("id")
     }
     items: list[CollectedItem] = []
+    used_external_title_resolutions = 0
     for record in payload.get("data") or []:
         tweet_id = record["id"]
         text = record.get("text") or ""
         author = users.get(record.get("author_id"), {})
         username = author.get("username")
-        url = f"https://x.com/{username}/status/{tweet_id}" if username else f"https://x.com/i/web/status/{tweet_id}"
+        tweet_url = f"https://x.com/{username}/status/{tweet_id}" if username else f"https://x.com/i/web/status/{tweet_id}"
+        target_url = _extract_target_url(record) or tweet_url
+        title, used_external_resolution = _resolve_title(
+            text=text,
+            target_url=target_url,
+            tweet_url=tweet_url,
+            title_fetcher=title_fetcher,
+            title_synthesizer=title_synthesizer,
+            allow_external_resolution=used_external_title_resolutions < remaining_external_title_resolutions,
+            enable_title_synthesis=enable_title_synthesis,
+        )
+        if used_external_resolution:
+            used_external_title_resolutions += 1
         intent = IntentSignals(saved=signal_type == "bookmarks", liked=signal_type == "likes")
         items.append(
             CollectedItem(
                 id=f"{source}:{tweet_id}",
                 source=source,
                 source_kind="post",
-                title=_title_from_text(text),
+                title=title,
                 excerpt=text,
                 body=text,
-                url=url,
+                url=target_url,
                 timestamps=ItemTimestamps(created_at=record.get("created_at")),
                 intent_signals=intent,
                 provenance=Provenance(
                     provider="x.com",
                     acquisition_mode="official_api",
                     authority_tier="primary",
-                    primary_source_url=url,
+                    primary_source_url=target_url,
                     raw_record_id=tweet_id,
                 ),
-                citation_chain=[CitationLink(label=_title_from_text(text), url=url, relation="primary")],
+                citation_chain=[CitationLink(label=title, url=target_url, relation="primary")],
                 metadata={
                     "x_signal": signal_type,
                     "author_id": record.get("author_id"),
                     "author_username": username,
+                    "tweet_url": tweet_url,
+                    "target_url": target_url,
                 },
             )
         )
-    return items
+    return items, used_external_title_resolutions
+
+
+def _extract_target_url(record: dict[str, Any]) -> str | None:
+    entities = record.get("entities") or {}
+    urls = entities.get("urls") or []
+    for candidate in urls:
+        if not isinstance(candidate, dict):
+            continue
+        for key in ("expanded_url", "unwound_url", "url"):
+            value = candidate.get(key)
+            if isinstance(value, str) and value.startswith("http"):
+                return value
+    return None
+
+
+def _resolve_title(
+    *,
+    text: str,
+    target_url: str,
+    tweet_url: str,
+    title_fetcher: TitleFetcher,
+    title_synthesizer: TitleSynthesizer,
+    allow_external_resolution: bool,
+    enable_title_synthesis: bool,
+) -> tuple[str, bool]:
+    if target_url == tweet_url:
+        return _title_from_text(text), False
+    if not allow_external_resolution:
+        return _title_from_text(text), False
+    fetched_title = title_fetcher(target_url)
+    if fetched_title:
+        return _normalize_title(fetched_title), True
+    if enable_title_synthesis:
+        synthesized_title = title_synthesizer(text, target_url)
+        if synthesized_title:
+            return _normalize_title(synthesized_title), True
+    return _title_from_text(text), True
+
+
+def _normalize_title(text: str) -> str:
+    compact = " ".join(text.split())
+    return compact[:120] if compact else "X post"
 
 
 def _title_from_text(text: str) -> str:
